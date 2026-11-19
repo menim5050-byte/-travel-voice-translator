@@ -1,7 +1,7 @@
 // Service worker: האפליקציה נשמרת במכשיר ועובדת גם בלי אינטרנט.
 // אסטרטגיה: קודם הרשת (כדי שעדכונים יופיעו מיד), ואם אין רשת או שהיא איטית, המטמון.
 // בקשות לשירותי התרגום (דומיין אחר) לא נוגעים בהן.
-const VERSION = 'tvt-v3';
+const VERSION = 'tvt-v4';
 const ASSETS = [
   './', './index.html', './manifest.json', './css/styles.css',
   './js/app.js', './js/languages.js', './js/phrasebook.js', './js/translate.js', './js/speech.js',

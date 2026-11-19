@@ -153,7 +153,8 @@ with sync_playwright() as p:
     page.click('#settingsBtn'); page.wait_for_selector('#settings[open]')
     info=page.inner_text('#voiceInfo')
     ok('settings voice info', 'עברית: ✓' in info and 'רומנית: ✗' in info, info[:70])
-    page.fill('#optEmail','meni@example.com'); page.dispatch_event('#optEmail','change')
+    page.fill('#optEmail','meni@example.com')
+    ok('email status shows saved','נשמר' in page.inner_text('#emailStatus'))
     page.screenshot(path=f'{OUT}/m5_settings.png')
     page.click('#closeSettings')
     page.fill('#inputA','משפט עם אימייל להגדלת מכסה'); page.click('#sendBtnA'); page.wait_for_timeout(400)
@@ -169,7 +170,7 @@ with sync_playwright() as p:
     page.wait_for_function("navigator.serviceWorker.ready.then(()=>true)")
     page.reload(); page.wait_for_load_state('networkidle')
     ok('SW controlling', page.evaluate("!!navigator.serviceWorker.controller"))
-    cached=page.evaluate("caches.open('tvt-v3').then(c=>c.keys()).then(k=>k.map(r=>new URL(r.url).pathname.split('/').pop()||'/'))")
+    cached=page.evaluate("caches.open('tvt-v4').then(c=>c.keys()).then(k=>k.map(r=>new URL(r.url).pathname.split('/').pop()||'/'))")
     need={'index.html','manifest.json','styles.css','app.js','languages.js','phrasebook.js','translate.js','speech.js','icon-192.png','icon-512.png','icon-maskable-512.png','apple-touch-icon.png'}
     ok('all assets cached', need<=set(cached), str(sorted(need-set(cached))))
     ctx.set_offline(True)

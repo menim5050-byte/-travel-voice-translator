@@ -302,7 +302,11 @@
 
       <div class="border-t border-slate-800 pt-3 flex flex-col gap-1.5">
         <label for="optEmail" class="text-slate-300">אימייל להגדלת מכסת התרגום (לא חובה)</label>
-        <input id="optEmail" type="email" dir="ltr" placeholder="name@example.com" class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        <div class="flex gap-2">
+          <input id="optEmail" type="email" dir="ltr" autocomplete="email" placeholder="name@example.com" class="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          <button id="saveEmailBtn" type="button" class="shrink-0 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-semibold">שמור</button>
+        </div>
+        <p id="emailStatus" class="text-xs min-h-[1rem]" aria-live="polite"></p>
         <p class="text-xs text-slate-400 leading-relaxed">ללא אימייל המכסה החינמית היא כ-5,000 תווים ביום, ועם אימייל כ-50,000. נשמר במכשיר בלבד ונשלח רק לשירות MyMemory.</p>
       </div>
 
