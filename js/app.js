@@ -590,7 +590,23 @@ function saveEmail() {
 }
 el.optEmail.addEventListener('input', saveEmail);   // נשמר מיד בזמן ההקלדה
 el.optEmail.addEventListener('change', saveEmail);
-if (el.saveEmailBtn) el.saveEmailBtn.addEventListener('click', saveEmail);
+if (el.saveEmailBtn) {
+  let flashTimer = null;
+  el.saveEmailBtn.addEventListener('click', () => {
+    saveEmail();
+    const ok = !el.emailStatus || el.emailStatus.textContent.includes('✓');
+    const btn = el.saveEmailBtn;
+    clearTimeout(flashTimer);
+    btn.textContent = ok ? 'נשמר ✓' : 'לא נשמר ✗';
+    btn.classList.remove('bg-indigo-600', 'bg-green-600', 'bg-red-600');
+    btn.classList.add(ok ? 'bg-green-600' : 'bg-red-600');
+    flashTimer = setTimeout(() => {
+      btn.textContent = 'שמור';
+      btn.classList.remove('bg-green-600', 'bg-red-600');
+      btn.classList.add('bg-indigo-600');
+    }, 1800);
+  });
+}
 el.clearCacheBtn.addEventListener('click', () => { clearCache(); refreshSettingsInfo(); });
 el.installBtn.addEventListener('click', async () => {
   if (!deferredInstall) return;
