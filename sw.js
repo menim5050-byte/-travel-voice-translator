@@ -1,9 +1,10 @@
-// Service worker: מטמון של כל קבצי האפליקציה כדי שתעבוד אופליין. בקשות תרגום תמיד הולכות לרשת.
-const VERSION = 'tvt-v1';
+// Service worker: האפליקציה נשמרת במכשיר ועובדת גם בלי אינטרנט.
+// אסטרטגיה: קודם הרשת (כדי שעדכונים יופיעו מיד), ואם אין רשת או שהיא איטית, המטמון.
+// בקשות לשירותי התרגום (דומיין אחר) לא נוגעים בהן.
+const VERSION = 'tvt-v3';
 const ASSETS = [
-  './', './index.html', './manifest.json',
-  './css/styles.css',
-  './js/app.js', './js/phrasebook.js', './js/translate.js', './js/speech.js',
+  './', './index.html', './manifest.json', './css/styles.css',
+  './js/app.js', './js/languages.js', './js/phrasebook.js', './js/translate.js', './js/speech.js',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png'
 ];
 
@@ -21,14 +22,21 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const req = e.request;
   const url = new URL(req.url);
-  if (req.method !== 'GET' || url.origin !== self.location.origin) return; // API חיצוני: ישר לרשת
-  e.respondWith(
-    caches.match(req, { ignoreSearch: true }).then(hit => {
-      const net = fetch(req).then(res => {
-        if (res && res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); }
-        return res;
-      }).catch(() => hit || (req.mode === 'navigate' ? caches.match('./index.html') : undefined));
-      return hit || net; // מהמטמון מיד, ומתעדכן ברקע
-    })
-  );
+  if (req.method !== 'GET' || url.origin !== self.location.origin) return;
+
+  e.respondWith((async () => {
+    const cache = await caches.open(VERSION);
+    const fromCache = () => cache.match(req, { ignoreSearch: true }).then(hit => hit || (req.mode === 'navigate' ? cache.match('./index.html') : undefined));
+    try {
+      const res = await Promise.race([
+        fetch(req),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('slow')), 4000))
+      ]);
+      if (res && res.ok) cache.put(req, res.clone());
+      return res;
+    } catch (err) {
+      const hit = await fromCache();
+      return hit || Response.error();
+    }
+  })());
 });
