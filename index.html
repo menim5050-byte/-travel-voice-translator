@@ -13,7 +13,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="מתורגמן" />
-  <link rel="stylesheet" href="css/styles.css?v=547cc28386" />
+  <link rel="stylesheet" href="css/styles.css?v=0764278936" />
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
 
@@ -257,6 +257,20 @@
       <button id="listenOpenBtn" type="button" class="shrink-0 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-semibold shadow transition">מצב האזנה</button>
     </section>
 
+    <!-- Camera entry -->
+    <section id="cameraSection" class="f2f-hide bg-slate-900 border border-sky-700/40 rounded-2xl p-4 flex items-center justify-between gap-3">
+      <div class="flex flex-col gap-0.5 min-w-0">
+        <h3 class="text-sm font-semibold text-sky-200">📷 צלם ותרגם</h3>
+        <p class="text-xs text-slate-400">שלטים, תפריטים, הודעות. מחירים מוצגים גם בשקלים.</p>
+      </div>
+      <div class="flex gap-2 shrink-0">
+        <button id="camShootBtn" type="button" class="px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold shadow transition">📷 צלם</button>
+        <button id="camGalleryBtn" type="button" aria-label="בחר תמונה מהגלריה" class="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm transition">🖼️</button>
+      </div>
+      <input id="camInput" type="file" accept="image/*" capture="environment" class="hidden" />
+      <input id="galleryInput" type="file" accept="image/*" class="hidden" />
+    </section>
+
     <!-- Quick Phrases Bar -->
     <section id="phrasesSection" class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
       <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -300,7 +314,7 @@
   </main>
 
   <!-- Fullscreen Big-Text Modal -->
-  <div id="bigTextModal" role="dialog" aria-modal="true" aria-labelledby="bigTextLangLabel" class="hidden fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm flex flex-col overflow-y-auto overscroll-contain text-center">
+  <div id="bigTextModal" role="dialog" aria-modal="true" aria-labelledby="bigTextLangLabel" class="hidden fixed inset-0 z-[55] bg-slate-950/95 backdrop-blur-sm flex flex-col overflow-y-auto overscroll-contain text-center">
     <div class="max-w-3xl w-full mx-auto my-auto flex flex-col items-center gap-5 px-6 pt-8 pb-4">
       <p id="bigTextLangLabel" class="text-sm text-slate-400"></p>
       <p id="bigTextContent" class="text-3xl sm:text-5xl font-bold text-white leading-snug break-words w-full"></p>
@@ -315,6 +329,55 @@
           ✕ סגור
         </button>
       </div>
+    </div>
+  </div>
+
+  <!-- Camera translate (full screen) -->
+  <div id="camModal" role="dialog" aria-modal="true" aria-labelledby="camTitle" class="hidden fixed inset-0 z-50 bg-slate-950 flex flex-col">
+    <div class="max-w-3xl w-full mx-auto flex flex-col h-full min-h-0 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] gap-3">
+      <div class="flex items-center justify-between gap-2">
+        <h2 id="camTitle" class="font-bold text-base text-white">📷 צילום ותרגום</h2>
+        <button id="camCloseBtn" type="button" aria-label="סגור" class="w-11 h-11 rounded-lg bg-slate-800 hover:bg-slate-700">✕</button>
+      </div>
+      <p id="camKeyHint" class="hidden text-xs text-amber-200 bg-amber-950/60 border border-amber-800/60 rounded-xl px-3 py-2 leading-relaxed">לקריאת תמונות צריך מפתח Groq (אותו מפתח של ההקלטה השקטה). <button id="camKeyBtn" type="button" class="underline font-semibold">פתח הגדרות</button></p>
+      <div class="flex-1 min-h-0 overflow-y-auto overscroll-contain flex flex-col gap-3">
+        <img id="camPreview" alt="התמונה שצולמה" class="hidden w-full max-h-[32vh] object-contain rounded-xl border border-slate-800 bg-black" />
+        <p id="camStatus" class="text-sm text-slate-300 min-h-[1.25rem]" aria-live="polite"></p>
+        <div id="camResult" class="hidden flex flex-col gap-3">
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 flex flex-col gap-2">
+            <div class="flex items-center justify-between gap-2 text-xs text-slate-400">
+              <span id="camTargetTag">תרגום:</span>
+              <div class="flex items-center gap-3 shrink-0">
+                <button id="camBigBtn" type="button" class="hit hover:text-white transition">⛶ הגדל</button>
+                <button id="camSpeakBtn" type="button" class="hit hover:text-white transition">🔊 השמע</button>
+                <button id="camCopyBtn" type="button" class="hit hover:text-white transition">העתק</button>
+              </div>
+            </div>
+            <p id="camTranslation" class="text-lg font-medium text-white leading-relaxed whitespace-pre-line break-words"></p>
+            <p id="camNote" class="hidden text-xs text-amber-300 leading-relaxed"></p>
+          </div>
+          <div id="camPrices" class="hidden bg-slate-900 border border-emerald-800/50 rounded-2xl p-3 flex flex-col gap-1.5">
+            <p class="text-xs text-emerald-300 font-semibold">💰 מחירים בשקלים (בקירוב)</p>
+            <ul id="camPriceList" class="flex flex-col gap-1 text-sm"></ul>
+            <p id="camRatesInfo" class="text-[11px] text-slate-500"></p>
+          </div>
+          <details class="bg-slate-900 border border-slate-800 rounded-2xl p-3">
+            <summary class="text-xs text-slate-400 cursor-pointer py-1">טקסט מקורי <span id="camLangName"></span></summary>
+            <p id="camOriginal" class="mt-2 text-sm text-slate-300 whitespace-pre-line break-words"></p>
+          </details>
+          <div class="flex flex-col gap-1">
+            <button id="camAltBtn" type="button" class="self-start text-xs text-indigo-300 underline py-1">🔁 תרגום חלופי, לבדיקת המשמעות</button>
+            <p id="camAlt" class="hidden text-sm text-slate-300 whitespace-pre-line break-words"></p>
+          </div>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 flex-wrap">
+        <button id="camRetakeBtn" type="button" class="flex-1 py-3 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold shadow transition">📷 צלם שוב</button>
+        <button id="camPickBtn" type="button" class="py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm">🖼️ מהגלריה</button>
+        <button id="camRetryBtn" type="button" class="hidden py-3 px-4 rounded-xl bg-amber-700 hover:bg-amber-600 text-white text-sm font-semibold">🔁 נסה שוב</button>
+        <button id="camShareBtn" type="button" class="hidden py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm">↗ שתף</button>
+      </div>
+      <p class="text-[11px] text-slate-500 leading-relaxed">התמונה מוקטנת בטלפון ונשלחת לקריאה בשירות Groq. נשמר רק הטקסט, בהיסטוריה.</p>
     </div>
   </div>
 
@@ -394,7 +457,7 @@
       </div>
 
       <div class="border-t border-slate-800 pt-3 flex flex-col gap-1.5">
-        <label for="optGroqKey" class="text-slate-300">מפתח Groq להקלטה שקטה (חינם)</label>
+        <label for="optGroqKey" class="text-slate-300">מפתח Groq להקלטה שקטה ולצילום (חינם)</label>
         <div class="flex gap-2">
           <input id="optGroqKey" type="password" dir="ltr" autocomplete="off" spellcheck="false" placeholder="gsk_..." class="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
           <button id="saveGroqBtn" type="button" class="shrink-0 min-w-[5.5rem] px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white transition font-semibold">שמור ובדוק</button>
@@ -446,16 +509,18 @@
   <!-- כתובת עם גרסה לכל קובץ, כדי שהדפדפן לעולם לא יערבב קובץ ישן עם חדש. נכתב אוטומטית ע"י tools/stamp-sw.py -->
   <script type="importmap">
   { "imports": {
-    "./js/app.js": "./js/app.js?v=547cc28386",
-    "./js/languages.js": "./js/languages.js?v=547cc28386",
-    "./js/phrasebook.js": "./js/phrasebook.js?v=547cc28386",
-    "./js/translate.js": "./js/translate.js?v=547cc28386",
-    "./js/speech.js": "./js/speech.js?v=547cc28386",
-    "./js/recorder.js": "./js/recorder.js?v=547cc28386",
-    "./js/transcribe.js": "./js/transcribe.js?v=547cc28386",
-    "./js/ui-strings.js": "./js/ui-strings.js?v=547cc28386"
+    "./js/app.js": "./js/app.js?v=0764278936",
+    "./js/languages.js": "./js/languages.js?v=0764278936",
+    "./js/phrasebook.js": "./js/phrasebook.js?v=0764278936",
+    "./js/translate.js": "./js/translate.js?v=0764278936",
+    "./js/speech.js": "./js/speech.js?v=0764278936",
+    "./js/recorder.js": "./js/recorder.js?v=0764278936",
+    "./js/transcribe.js": "./js/transcribe.js?v=0764278936",
+    "./js/vision.js": "./js/vision.js?v=0764278936",
+    "./js/currency.js": "./js/currency.js?v=0764278936",
+    "./js/ui-strings.js": "./js/ui-strings.js?v=0764278936"
   } }
   </script>
-  <script type="module" src="js/app.js?v=547cc28386"></script>
+  <script type="module" src="js/app.js?v=0764278936"></script>
 </body>
 </html>

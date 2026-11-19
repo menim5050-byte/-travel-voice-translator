@@ -5,6 +5,8 @@ import { speak, stopSpeaking, listen, listenLoop, unlockAudio, hasVoice, voicesL
 import { panelBStrings, PANEL_B_UI } from './ui-strings.js';
 import { startRecording, recorderSupported, extFor } from './recorder.js';
 import { transcribe, getGroqKey, setGroqKey, looksLikeGroqKey, testGroqKey, groupSegments } from './transcribe.js';
+import { prepareImage, readAndTranslate } from './vision.js';
+import { getRates, normalizeCurrency, toILS, formatILS, RATES_CREDIT } from './currency.js';
 const panelBStringsAll = () => PANEL_B_UI;
 
 const $ = id => document.getElementById(id);
@@ -220,9 +222,11 @@ function speakText(text, langKey, { auto = false } = {}) {
 }
 
 /* ---------- היסטוריה ומועדפים ---------- */
-const SRC_LABEL = { phrasebook: 'שיחון', cache: 'זיכרון', mymemory: '', google: 'גיבוי Google', lingva: 'גיבוי', same: '', favorite: 'מועדף', listen: '' };
+const SRC_LABEL = { phrasebook: 'שיחון', cache: 'זיכרון', mymemory: '', google: 'גיבוי Google', lingva: 'גיבוי', same: '', favorite: 'מועדף', listen: '', camera: '' };
+const AUTO_LANG = { nameHe: 'זוהתה אוטומטית', native: '', dir: 'auto', speechCode: '' };
+const langCfg = k => (isLang(k) ? LANGUAGES[k] : AUTO_LANG);
 
-const validEntry = e => e && typeof e === 'object' && isLang(e.sourceLang) && isLang(e.targetLang) &&
+const validEntry = e => e && typeof e === 'object' && (isLang(e.sourceLang) || e.sourceLang === 'auto') && isLang(e.targetLang) &&
   typeof e.originalText === 'string' && typeof e.translatedText === 'string' && e.translatedText;
 const favKey = e => `${e.sourceLang}|${e.targetLang}|${e.originalText}`;
 
@@ -263,7 +267,7 @@ function renderHistory() {
   }
   state.history.forEach(item => {
     const isA = item.speaker === 'A';
-    const srcCfg = LANGUAGES[item.sourceLang];
+    const srcCfg = langCfg(item.sourceLang);
     const tgtCfg = LANGUAGES[item.targetLang];
 
     const card = document.createElement('div');
@@ -275,7 +279,7 @@ function renderHistory() {
     const badge = document.createElement('span');
     badge.className = isA ? 'text-sky-400 font-semibold pt-1.5' : 'text-emerald-400 font-semibold pt-1.5';
     const lbl = SRC_LABEL[item.source] ? ` · ${SRC_LABEL[item.source]}` : '';
-    const who = item.source === 'listen' ? '🎧 האזנה' : (isA ? 'דובר א׳' : 'דובר ב׳');
+    const who = item.source === 'listen' ? '🎧 האזנה' : item.source === 'camera' ? '📷 צילום' : (isA ? 'דובר א׳' : 'דובר ב׳');
     badge.textContent = `${who} · ${srcCfg.nameHe} ← ${tgtCfg.nameHe} · ${timeLabel(item.ts)}${lbl}`;
 
     const actions = document.createElement('div');
@@ -295,7 +299,7 @@ function renderHistory() {
     playBtn.textContent = '🔊 השמע';
     playBtn.addEventListener('click', () => { unlockAudio(); speakText(item.translatedText, item.targetLang); });
 
-    if (item.source !== 'listen') actions.appendChild(favBtn); // תמלול ארוך לא נכנס למועדפים
+    if (item.source !== 'listen' && item.source !== 'camera' && isLang(item.sourceLang)) actions.appendChild(favBtn); // טקסט ארוך לא נכנס למועדפים
     actions.appendChild(playBtn);
     topRow.appendChild(badge);
     topRow.appendChild(actions);
@@ -320,7 +324,7 @@ function renderHistory() {
 function renderFavorites() {
   el.favPhrases.textContent = '';
   el.favWrap.classList.toggle('hidden', state.favorites.length === 0);
-  state.favorites.forEach(f => {
+  state.favorites.filter(f => isLang(f.sourceLang)).forEach(f => {
     const wrap = document.createElement('span');
     wrap.className = 'inline-flex items-stretch rounded-xl border border-amber-700/50 bg-amber-950/30 overflow-hidden';
     const btn = document.createElement('button');
@@ -415,7 +419,7 @@ async function checkMeaning(speaker) {
   const text = state.lastTranslated[speaker];
   if (!text) { showBanner('אין עדיין תרגום לבדיקה. תרגם משפט קודם.', 'info'); return; }
   const from = state.lastTargetLang[speaker];
-  const to = state.lastSourceLang[speaker] || langOf(speaker);
+  const to = isLang(state.lastSourceLang[speaker]) ? state.lastSourceLang[speaker] : langOf(speaker);
   const b = backOf(speaker);
   const myReq = state.reqId[speaker];
   b.classList.remove('hidden');
@@ -727,7 +731,7 @@ function applyFaceToFace() {
 
 let bigTextCurrentLang = 'en';
 // כפתור "חזור" של אנדרואיד סוגר חלון פתוח (תצוגה גדולה / מצב האזנה) במקום לצאת מהאפליקציה
-const overlayPushed = { big: false, listen: false };
+const overlayPushed = { big: false, listen: false, cam: false };
 let ignorePops = 0;
 function pushOverlay(name) {
   if (overlayPushed[name]) return;
@@ -741,7 +745,11 @@ function popOverlay(name, fromPopState) {
 function openBigText(speaker) {
   const text = state.lastTranslated[speaker];
   if (!text) { showBanner('אין עדיין תרגום להגדלה. תרגם משפט קודם.', 'info'); return; }
-  const langKey = isLang(state.lastTargetLang[speaker]) ? state.lastTargetLang[speaker] : 'en';
+  // במצב פנים-אל-פנים, הגדלה מהצד של דובר ב׳ מוצגת הפוכה כדי שהוא יוכל לקרוא
+  showBigText({ text, langKey: state.lastTargetLang[speaker], src: state.lastSourceText[speaker], srcLang: state.lastSourceLang[speaker], flip: state.faceToFace && speaker === 'A' });
+}
+function showBigText({ text, langKey: wanted, src, srcLang, flip }) {
+  const langKey = isLang(wanted) ? wanted : 'en';
   const cfg = LANGUAGES[langKey];
   bigTextCurrentLang = langKey;
   el.bigTextLangLabel.textContent = `תצוגה ברורה (${cfg.nameHe} · ${cfg.native})`;
@@ -750,11 +758,9 @@ function openBigText(speaker) {
   const size = text.length > 300 ? 'text-xl sm:text-3xl' : text.length > 140 ? 'text-2xl sm:text-4xl' : 'text-3xl sm:text-5xl';
   el.bigTextContent.className = `${size} font-bold text-white leading-snug break-words w-full`;
   el.bigTextContent.textContent = text;
-  const src = state.lastSourceText[speaker];
-  el.bigTextOriginal.dir = isLang(state.lastSourceLang[speaker]) ? LANGUAGES[state.lastSourceLang[speaker]].dir : 'auto';
+  el.bigTextOriginal.dir = isLang(srcLang) ? LANGUAGES[srcLang].dir : 'auto';
   el.bigTextOriginal.textContent = src && src !== text ? src : '';
-  // במצב פנים-אל-פנים, הגדלה מהצד של דובר ב׳ מוצגת הפוכה כדי שהוא יוכל לקרוא
-  el.bigTextModal.classList.toggle('face-to-face-flip', state.faceToFace && speaker === 'A');
+  el.bigTextModal.classList.toggle('face-to-face-flip', !!flip);
   el.bigTextModal.classList.remove('hidden');
   el.bigTextModal.scrollTop = 0;
   placeBanner();
@@ -771,11 +777,13 @@ function closeBigText(fromPopState) {
 window.addEventListener('popstate', () => {
   if (ignorePops > 0) { ignorePops--; return; }
   if (!el.bigTextModal.classList.contains('hidden')) closeBigText(true);
+  else if (cm.open) closeCam(true);
   else if (lm.open) closeListen(true);
 });
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   if (!el.bigTextModal.classList.contains('hidden')) closeBigText();
+  else if (cm.open) closeCam();
   else if (lm.open) closeListen();
 });
 
@@ -1289,6 +1297,250 @@ lEl.clear.addEventListener('click', () => {
   lEl.status.textContent = '';
 });
 
+
+/* ---------- צילום ותרגום (שלטים, תפריטים, הודעות) + מחירים בשקלים ---------- */
+const cEl = {
+  section: $('cameraSection'), shoot: $('camShootBtn'), gallery: $('camGalleryBtn'), input: $('camInput'), galleryInput: $('galleryInput'),
+  modal: $('camModal'), close: $('camCloseBtn'), keyHint: $('camKeyHint'), keyBtn: $('camKeyBtn'), preview: $('camPreview'),
+  status: $('camStatus'), result: $('camResult'), targetTag: $('camTargetTag'), translation: $('camTranslation'), note: $('camNote'),
+  big: $('camBigBtn'), speak: $('camSpeakBtn'), copy: $('camCopyBtn'), prices: $('camPrices'), priceList: $('camPriceList'),
+  ratesInfo: $('camRatesInfo'), langName: $('camLangName'), original: $('camOriginal'), altBtn: $('camAltBtn'), alt: $('camAlt'),
+  retake: $('camRetakeBtn'), pick: $('camPickBtn'), retry: $('camRetryBtn'), share: $('camShareBtn')
+};
+const cm = { open: false, session: 0, image: null, previewUrl: null, res: null, target: 'he' };
+
+function openCam() {
+  if (cm.open) return;
+  stopRecognition();
+  stopSpeaking();
+  cm.open = true;
+  cEl.modal.classList.remove('hidden');
+  pushOverlay('cam');
+  placeBanner();
+}
+function closeCam(fromPopState) {
+  if (!cm.open) return;
+  cm.open = false;
+  cm.session++; // תשובה שתגיע אחרי הסגירה לא תוצג
+  cEl.modal.classList.add('hidden');
+  placeBanner();
+  popOverlay('cam', fromPopState);
+}
+function camReset() {
+  cEl.result.classList.add('hidden');
+  cEl.retry.classList.add('hidden');
+  cEl.share.classList.add('hidden');
+  cEl.keyHint.classList.add('hidden');
+  cEl.note.classList.add('hidden');
+  cEl.prices.classList.add('hidden');
+  cEl.alt.classList.add('hidden');
+  cEl.alt.textContent = '';
+  cm.res = null;
+}
+
+async function handleImageFile(file) {
+  if (!file) return;
+  openCam();
+  camReset();
+  const session = ++cm.session;
+  if (cm.previewUrl) URL.revokeObjectURL(cm.previewUrl);
+  cm.previewUrl = URL.createObjectURL(file);
+  cEl.preview.src = cm.previewUrl;
+  cEl.preview.classList.remove('hidden');
+  cm.image = null;
+  cm.target = el.langA.value;
+  if (!getGroqKey()) {
+    cEl.status.textContent = 'לקריאת התמונה צריך קודם מפתח Groq בהגדרות.';
+    cEl.keyHint.classList.remove('hidden');
+    cm.pendingFile = file;
+    return;
+  }
+  cEl.status.textContent = 'מכין את התמונה...';
+  try {
+    cm.image = await prepareImage(file);
+  } catch (e) {
+    if (session !== cm.session) return;
+    cEl.status.textContent = e.message || 'לא ניתן לקרוא את התמונה.';
+    return;
+  }
+  await readCurrentImage(session);
+}
+
+async function readCurrentImage(session) {
+  if (!cm.image) return;
+  cEl.retry.classList.add('hidden');
+  cEl.status.textContent = `קורא ומתרגם ל${LANGUAGES[cm.target].nameHe}...`;
+  keepScreenOn();
+  let r;
+  try {
+    r = await readAndTranslate(cm.image.dataUrl, cm.target);
+  } catch (e) {
+    if (session !== cm.session) return;
+    cEl.status.textContent = e.message || 'הקריאה נכשלה.';
+    if (e.code === 'auth' || e.code === 'no-key') cEl.keyHint.classList.remove('hidden');
+    else cEl.retry.classList.remove('hidden');
+    return;
+  }
+  if (session !== cm.session) return;
+  cm.res = r;
+  if (!r.translation && !r.original) {
+    cEl.status.textContent = r.note || 'לא נמצא טקסט בתמונה. נסה לצלם מקרוב יותר, ישר ובאור טוב.';
+    return;
+  }
+  const srcLang = isLang(r.language) ? r.language : 'auto';
+  const translation = r.translation || r.original;
+  cEl.status.textContent = '';
+  cEl.result.classList.remove('hidden');
+  cEl.targetTag.textContent = `תרגום ל${LANGUAGES[cm.target].nameHe}:`;
+  cEl.translation.textContent = translation;
+  cEl.translation.dir = LANGUAGES[cm.target].dir;
+  cEl.translation.lang = LANGUAGES[cm.target].speechCode;
+  cEl.note.classList.toggle('hidden', !r.note);
+  cEl.note.textContent = r.note;
+  cEl.langName.textContent = isLang(srcLang) ? `(${LANGUAGES[srcLang].nameHe})` : '';
+  cEl.original.textContent = r.original || '';
+  cEl.original.dir = isLang(srcLang) ? LANGUAGES[srcLang].dir : 'auto';
+  if (navigator.share) cEl.share.classList.remove('hidden');
+  addHistoryEntry('A', srcLang, cm.target, r.original || translation, translation, 'camera');
+  if (el.autoSpeakToggle.checked && srcLang !== cm.target) {
+    // לא מקריאים אוטומטית טקסט ארוך מצילום; רק משפט קצר
+    if (translation.length <= 120) speakText(translation, cm.target, { auto: true });
+  }
+  renderPrices(r.prices, srcLang, session);
+}
+
+async function renderPrices(prices, srcLang, session) {
+  cEl.priceList.textContent = '';
+  const items = (prices || []).map(p => ({ ...p, code: normalizeCurrency(p.currency, srcLang) })).filter(p => p.code && p.code !== 'ILS');
+  if (!items.length) { cEl.prices.classList.add('hidden'); return; }
+  cEl.prices.classList.remove('hidden');
+  cEl.ratesInfo.textContent = 'טוען שערים...';
+  const rates = await getRates();
+  if (session !== cm.session) return;
+  if (!rates) { cEl.ratesInfo.textContent = 'אין כרגע שערי מטבע (צריך אינטרנט פעם אחת).'; return; }
+  for (const p of items.slice(0, 12)) {
+    const ils = toILS(p.amount, p.code, rates.rates);
+    const li = document.createElement('li');
+    li.className = 'flex items-center justify-between gap-3';
+    const a = document.createElement('bdi');
+    a.className = 'text-slate-300';
+    a.textContent = p.text || `${p.amount} ${p.code}`;
+    const b = document.createElement('span');
+    b.className = 'font-semibold text-emerald-300 whitespace-nowrap';
+    b.dir = 'ltr';
+    b.textContent = ils == null ? `(${p.code}: אין שער)` : `≈ ₪${formatILS(ils)}`;
+    li.appendChild(a);
+    li.appendChild(b);
+    cEl.priceList.appendChild(li);
+  }
+  const age = Date.now() - rates.ts;
+  const when = new Date(rates.ts).toLocaleString('he-IL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  cEl.ratesInfo.textContent = '';
+  const t = document.createElement('span');
+  t.textContent = `שער יומי, עודכן ${when}${age > 24 * 3600 * 1000 ? ' (ישן, אין חיבור)' : ''} · שערים: `;
+  const link = document.createElement('a');
+  link.href = RATES_CREDIT.url;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  link.className = 'underline';
+  link.dir = 'ltr';
+  link.textContent = RATES_CREDIT.label;
+  cEl.ratesInfo.appendChild(t);
+  cEl.ratesInfo.appendChild(link);
+}
+
+function updateCamKeyHint() { if (getGroqKey()) cEl.keyHint.classList.add('hidden'); }
+
+cEl.shoot.addEventListener('click', () => { unlockAudio(); cEl.input.value = ''; cEl.input.click(); });
+cEl.gallery.addEventListener('click', () => { unlockAudio(); cEl.galleryInput.value = ''; cEl.galleryInput.click(); });
+cEl.retake.addEventListener('click', () => { cEl.input.value = ''; cEl.input.click(); });
+cEl.pick.addEventListener('click', () => { cEl.galleryInput.value = ''; cEl.galleryInput.click(); });
+cEl.input.addEventListener('change', () => handleImageFile(cEl.input.files && cEl.input.files[0]));
+cEl.galleryInput.addEventListener('change', () => handleImageFile(cEl.galleryInput.files && cEl.galleryInput.files[0]));
+cEl.close.addEventListener('click', () => closeCam());
+cEl.retry.addEventListener('click', () => {
+  if (cm.image) readCurrentImage(cm.session);
+  else if (cm.pendingFile) handleImageFile(cm.pendingFile);
+});
+cEl.keyBtn.addEventListener('click', () => { refreshSettingsInfo(); el.settings.showModal(); placeBanner(); try { $('optGroqKey').focus(); } catch { /* ignore */ } });
+el.settings.addEventListener('close', () => {
+  // אחרי שהוגדר מפתח, ממשיכים עם התמונה שחיכתה
+  updateCamKeyHint();
+  if (cm.open && cm.pendingFile && getGroqKey()) { const f = cm.pendingFile; cm.pendingFile = null; handleImageFile(f); }
+});
+cEl.big.addEventListener('click', () => {
+  if (!cm.res) return;
+  showBigText({ text: cEl.translation.textContent, langKey: cm.target, src: '', srcLang: '', flip: false });
+});
+cEl.speak.addEventListener('click', () => { unlockAudio(); if (cEl.translation.textContent) speakText(cEl.translation.textContent, cm.target); });
+cEl.copy.addEventListener('click', () => { if (cEl.translation.textContent) copyOutput(null, cEl.copy, cEl.translation.textContent); });
+cEl.share.addEventListener('click', () => {
+  if (!cm.res) return;
+  const text = cEl.translation.textContent + (cm.res.original && cm.res.original !== cEl.translation.textContent ? `\n\n(${cm.res.original})` : '');
+  navigator.share({ text }).catch(() => { /* בוטל */ });
+});
+cEl.altBtn.addEventListener('click', async () => {
+  if (!cm.res || !cm.res.original) return;
+  const session = cm.session;
+  cEl.alt.classList.remove('hidden');
+  cEl.alt.dir = 'rtl';
+  cEl.alt.textContent = 'מתרגם בדרך נוספת...';
+  try {
+    const from = isLang(cm.res.language) ? cm.res.language : 'auto';
+    const r = await translate(cm.res.original, from, cm.target);
+    if (session !== cm.session) return;
+    cEl.alt.dir = LANGUAGES[cm.target].dir;
+    cEl.alt.textContent = '🔁 ' + r.text;
+  } catch (e) {
+    if (session !== cm.session) return;
+    cEl.alt.textContent = 'התרגום החלופי לא זמין כרגע: ' + (e.message || '');
+  }
+});
+
+/* ---------- "שתף אל המתורגמן" ---------- */
+const HEBREW_CHARS = /[֐-׿]/g;
+async function handleSharedText(text) {
+  const t = String(text || '').trim().slice(0, 4000);
+  if (!t) return;
+  const heb = (t.match(HEBREW_CHARS) || []).length;
+  const letters = (t.match(/\p{L}/gu) || []).length || 1;
+  if (heb / letters > 0.5 && el.langA.value === 'he') {
+    // הודעה בעברית: מתרגמים לשפה של דובר ב׳ (למשל כדי לשלוח אותה)
+    setActiveTurn('A');
+    el.inputA.value = t;
+    showBanner('תורגמה הודעה ששותפה אל המתורגמן.', 'info');
+    await handleTranslate('A', t);
+    return;
+  }
+  // הודעה בשפה זרה: מזהים את השפה לבד ומתרגמים לעברית (התיבה של דובר ב׳)
+  setActiveTurn('B');
+  el.inputB.value = t;
+  showBanner('תורגמה הודעה ששותפה אל המתורגמן.', 'info');
+  await runTranslation('B', t, 'auto', el.langA.value);
+}
+
+async function checkSharedInbox() {
+  const params = new URLSearchParams(location.search);
+  if (!params.has('shared') || !('caches' in window)) return;
+  try { history.replaceState(null, '', location.pathname); } catch { /* ignore */ }
+  try {
+    const inbox = await caches.open('share-inbox');
+    const metaRes = await inbox.match('./__shared-meta');
+    const meta = metaRes ? await metaRes.json() : null;
+    const imgRes = meta && meta.hasImage ? await inbox.match('./__shared-image') : null;
+    const blob = imgRes ? await imgRes.blob() : null;
+    await inbox.delete('./__shared-meta');
+    await inbox.delete('./__shared-image');
+    if (blob && blob.size) {
+      await handleImageFile(new File([blob], 'shared-image', { type: blob.type || 'image/jpeg' }));
+    } else if (meta && meta.text) {
+      await handleSharedText(meta.text);
+    } else {
+      showBanner('לא התקבל טקסט או תמונה מהשיתוף.', 'warn');
+    }
+  } catch { showBanner('לא הצלחתי לקרוא את מה ששותף.', 'warn'); }
+}
+
 /* ---------- הגדרות והתקנה ---------- */
 function renderVoices() {
   el.voiceInfo.textContent = '';
@@ -1367,6 +1619,7 @@ async function saveGroq() {
   if (!looksLikeGroqKey(v)) { setGroqStatus('text-amber-300', 'זה לא נראה כמו מפתח Groq (מתחיל ב-gsk_). בדוק שהעתקת את כולו.'); return; }
   setGroqKey(v);
   renderListenSetup();
+  updateCamKeyHint();
   setGroqStatus('text-slate-400', 'נשמר. בודק שהמפתח עובד...');
   try { await testGroqKey(v); setGroqStatus('text-emerald-400', '✓ המפתח עובד. הקלטה שקטה זמינה.'); }
   catch (e) { setGroqStatus(e.code === 'auth' ? 'text-rose-300' : 'text-amber-300', e.message); }
@@ -1555,6 +1808,7 @@ if (!speechSupport.stt) {
 }
 if (!navigator.onLine) window.dispatchEvent(new Event('offline'));
 window.__tvtStarted = true; // שומר האתחול ב-index.html יודע שהאפליקציה עלתה
+checkSharedInbox();
 try { sessionStorage.removeItem('tvt_boot_retry'); } catch { /* ignore */ }
 
 if ('serviceWorker' in navigator) {
@@ -1565,7 +1819,7 @@ if ('serviceWorker' in navigator) {
   // מרעננים לבד רק כשבאמת לא משתמשים באפליקציה. אחרת שואלים.
   const busy = () => {
     const a = document.activeElement;
-    return !!state.activeMic || state.pending.A || state.pending.B || el.settings.open || isSpeaking() || lm.open ||
+    return !!state.activeMic || state.pending.A || state.pending.B || el.settings.open || isSpeaking() || lm.open || cm.open ||
       !el.bigTextModal.classList.contains('hidden') || (a && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT')) ||
       Date.now() - lastActivity < 2 * 60 * 1000;
   };

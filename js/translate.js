@@ -25,6 +25,10 @@ const HOST_COOLDOWN_MS = 10 * 60 * 1000; // שרת גיבוי שנכשל לא נ
 
 const own = (o, k) => o !== null && typeof o === 'object' && Object.prototype.hasOwnProperty.call(o, k);
 export const isLang = k => typeof k === 'string' && own(LANGUAGES, k);
+// 'auto' = שפת מקור לא ידועה (למשל הודעה ששותפה מאפליקציה אחרת). השירותים מזהים לבד.
+const AUTO = 'auto';
+const mmCode = k => (k === AUTO ? 'Autodetect' : LANGUAGES[k].mm);
+const lingvaCode = k => (k === AUTO ? 'auto' : LANGUAGES[k].lingva);
 
 /* ---------- אימייל ---------- */
 export function getEmail() { try { return localStorage.getItem(EMAIL_KEY) || ''; } catch { return ''; } }
@@ -181,7 +185,7 @@ const MM_ERROR_TEXT = /^\s*(MYMEMORY WARNING|QUERY LENGTH LIMIT|INVALID (LANGUAG
 
 async function viaMyMemory(text, from, to, signal) {
   let url = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) +
-    '&langpair=' + encodeURIComponent(LANGUAGES[from].mm + '|' + LANGUAGES[to].mm);
+    '&langpair=' + encodeURIComponent(mmCode(from) + '|' + mmCode(to));
   const email = getEmail();
   if (email) url += '&de=' + encodeURIComponent(email);
   let d = null;
@@ -204,7 +208,7 @@ const hostFailedAt = {};
 const hostCooling = host => Date.now() - (hostFailedAt[host] || 0) < HOST_COOLDOWN_MS;
 const markFailed = host => { hostFailedAt[host] = Date.now(); };
 
-const googleCode = k => (k === 'zh' ? 'zh-CN' : LANGUAGES[k].lingva);
+const googleCode = k => (k === 'zh' ? 'zh-CN' : lingvaCode(k));
 
 // התשובה מגיעה בכמה צורות: ["תרגום"], [["תרגום","en"]], או {sentences:[{trans}]}
 export function parseGoogle(d) {
@@ -222,7 +226,7 @@ async function viaGoogle(text, from, to, signal) {
 }
 
 async function viaLingvaAt(base, text, from, to, signal) {
-  const url = `${base}/api/v1/${LANGUAGES[from].lingva}/${LANGUAGES[to].lingva}/${encodeURIComponent(text)}`;
+  const url = `${base}/api/v1/${lingvaCode(from)}/${lingvaCode(to)}/${encodeURIComponent(text)}`;
   const d = await fetchJson(url, BACKUP_TIMEOUT_MS, signal);
   if (!d || typeof d.translation !== 'string' || !d.translation.trim()) throw new Error('lingva: empty');
   return tidy(d.translation, text);
@@ -251,10 +255,10 @@ const MSG_TIMEOUT = 'התרגום לוקח יותר מדי זמן (הרשת חל
 export async function translate(text, from, to, options = {}) {
   const clean = String(text || '').trim();
   if (!clean) return { text: '', source: 'none' };
-  if (!isLang(from) || !isLang(to)) throw new Error('שפה לא מוכרת.');
+  if ((!isLang(from) && from !== AUTO) || !isLang(to)) throw new Error('שפה לא מוכרת.');
   if (from === to) return { text: clean, source: 'same' };
 
-  const local = phrasebookLookup(clean, from, to);
+  const local = from === AUTO ? null : phrasebookLookup(clean, from, to);
   if (local) return { text: local, source: 'phrasebook' };
 
   const key = `${from}|${to}|${clean}`;
@@ -270,6 +274,15 @@ export async function translate(text, from, to, options = {}) {
   const finish = (out, source) => { cachePut(key, out, gen); return { text: out, source }; };
 
   try {
+    if (from === AUTO) {
+      // שפה לא ידועה: קודם הגיבויים (Google מזהה שפה טוב), ואחר כך MyMemory עם זיהוי אוטומטי
+      if (options.onBackup) { try { options.onBackup(); } catch { /* ignore */ } }
+      try { const r = await firstSuccess(backups(clean, from, to, ctrl.signal)); return finish(r.text, r.source); } catch { /* ממשיכים */ }
+      if (!timedOut && !mmSkipped()) {
+        try { const out = await inChunks(viaMyMemory, clean, MM_MAX_BYTES, from, to, ctrl.signal); if (out) return finish(out, 'mymemory'); } catch { /* ignore */ }
+      }
+      throw new Error(timedOut ? MSG_TIMEOUT : MSG_UNAVAILABLE);
+    }
     let sameAsSource = null;
     if (!mmSkipped()) {
       try {

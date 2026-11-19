@@ -374,6 +374,94 @@ with sync_playwright() as p:
     ok('no JS errors (silent recording)', not errs4, str(errs4))
     ctx4.close()
 
+    # 23. צילום ותרגום + מחירים בשקלים
+    from PIL import Image, ImageDraw
+    img_path = '/tmp/tvt_test_menu.png'
+    im = Image.new('RGB', (1200, 700), 'white'); d = ImageDraw.Draw(im); d.text((40, 40), 'MENU 60 THB', fill='black'); im.save(img_path)
+    VISION = {'language': 'th', 'original': 'ข้าวผัด 60 บาท\nน้ำ 20 บาท', 'translation': 'אורז מוקפץ 60 באט\nמים 20 באט',
+              'prices': [{'amount': 60, 'currency': 'THB', 'text': 'ข้าวผัด 60 บาท'}, {'amount': 20, 'currency': '฿', 'text': 'น้ำ 20 บาท'}], 'note': ''}
+    vis = {'mode': 'ok', 'calls': []}
+    def vision_route(route):
+        u = route.request.url
+        if u.endswith('/models'):
+            route.fulfill(status=200, headers=CORS, body='{"data":[]}'); return
+        body = json.loads(route.request.post_data or '{}')
+        vis['calls'].append(body)
+        if vis['mode'] == '401':
+            route.fulfill(status=401, headers=CORS, body=json.dumps({'error': {'message': 'Invalid API Key'}})); return
+        if vis['mode'] == 'nojson' and 'response_format' in body:
+            route.fulfill(status=400, headers=CORS, body=json.dumps({'error': {'message': 'response_format json_object is not supported with images'}})); return
+        route.fulfill(status=200, headers=CORS, body=json.dumps({'choices': [{'message': {'content': json.dumps(VISION, ensure_ascii=False)}}]}))
+    fx_calls = []
+    def fx_route(route):
+        fx_calls.append(route.request.url)
+        route.fulfill(status=200, headers=CORS, body=json.dumps({'result': 'success', 'time_last_update_utc': 'Thu, 19 Nov 2026 00:00:01 +0000', 'rates': {'ILS': 1, 'THB': 10.0, 'EUR': 0.25}}))
+    ctx5, page5, errs5 = new_page(b)
+    page5.route('https://api.groq.com/**', vision_route)
+    page5.route('https://open.er-api.com/**', fx_route)
+    page5.set_input_files('#galleryInput', img_path); page5.wait_for_timeout(300)
+    ok('camera: opens, no key -> hint', page5.is_visible('#camModal') and page5.is_visible('#camKeyHint') and page5.is_visible('#camPreview'))
+    page5.click('#camKeyBtn'); page5.wait_for_selector('#settings[open]')
+    page5.fill('#optGroqKey', 'gsk_' + 'a' * 40); page5.click('#saveGroqBtn'); page5.wait_for_timeout(300); page5.click('#closeSettings')
+    page5.wait_for_function("!document.getElementById('camResult').classList.contains('hidden')", timeout=8000)
+    ok('camera: continues by itself after the key is saved, Hebrew translation shown', page5.inner_text('#camTranslation') == 'אורז מוקפץ 60 באט\nמים 20 באט', repr(page5.inner_text('#camTranslation')))
+    call = vis['calls'][-1]
+    img_part = call['messages'][0]['content'][1]['image_url']['url']
+    ok('camera: image resized and sent as JPEG to the vision model', call['model'] == 'meta-llama/llama-4-scout-17b-16e-instruct' and img_part.startswith('data:image/jpeg;base64,') and len(img_part) < 3.6 * 1024 * 1024 and 'Hebrew' in call['messages'][0]['content'][0]['text'])
+    page5.wait_for_function("document.getElementById('camPriceList').children.length === 2", timeout=5000)
+    prices = page5.inner_text('#camPriceList')
+    ok('prices: converted to shekels (also from the ฿ symbol)', '≈ ₪6' in prices and '≈ ₪2' in prices, prices.replace('\n', ' | '))
+    ok('prices: rates credit shown', 'ExchangeRate-API' in page5.inner_text('#camRatesInfo') and len(fx_calls) == 1)
+    ok('camera: original text and language', 'ข้าวผัด' in page5.locator('#camOriginal').text_content() and 'תאילנדית' in page5.inner_text('#camLangName'))
+    page5.click('#camBigBtn'); page5.wait_for_timeout(150)
+    ok('camera: big text opens above it', page5.is_visible('#bigTextModal') and 'אורז מוקפץ' in page5.inner_text('#bigTextContent'))
+    page5.click('#bigTextCloseBtn'); page5.wait_for_timeout(150)
+    ok('camera: still open after closing big text', page5.is_visible('#camModal'))
+    page5.click('#camAltBtn')
+    page5.wait_for_function("document.getElementById('camAlt').textContent.includes('MM:')", timeout=8000)
+    ok('camera: alternative translation via the regular chain', 'langpair=th%7Che' in mm_calls[-1])
+    # מצב JSON לא נתמך -> ניסיון חוזר בלי, ומטבע מהמטמון (בלי בקשה נוספת)
+    def wait_calls(k, ms=8000):
+        t0 = time.time()
+        while len(vis['calls']) < k and time.time() - t0 < ms / 1000: page5.wait_for_timeout(100)
+    vis['mode'] = 'nojson'; n = len(vis['calls'])
+    page5.evaluate("document.getElementById('galleryInput').value = ''"); page5.set_input_files('#galleryInput', img_path)
+    wait_calls(n + 2)
+    page5.wait_for_function("!document.getElementById('camResult').classList.contains('hidden') && document.getElementById('camPriceList').children.length === 2", timeout=8000)
+    ok('camera: falls back when JSON mode is refused; rates cached', len(vis['calls']) == n + 2 and 'response_format' not in vis['calls'][-1] and len(fx_calls) == 1)
+    vis['mode'] = '401'; n = len(vis['calls'])
+    page5.evaluate("document.getElementById('galleryInput').value = ''"); page5.set_input_files('#galleryInput', img_path)
+    wait_calls(n + 1)
+    page5.wait_for_function("document.getElementById('camStatus').textContent.includes('לא תקין')", timeout=8000)
+    ok('camera: wrong key -> clear message and settings hint', page5.is_visible('#camKeyHint'))
+    vis['mode'] = 'ok'
+    page5.go_back(); page5.wait_for_timeout(250)
+    ok('camera: Android back closes it', not page5.is_visible('#camModal'))
+    first = page5.locator('#historyList > div >> nth=0').inner_text()
+    ok('camera: saved in history', '📷 צילום' in first and 'אורז מוקפץ' in first)
+
+    # 24. "שתף אל המתורגמן": טקסט בשפה זרה (זיהוי אוטומטי), טקסט בעברית, ותמונה
+    reset()
+    page5.evaluate("""caches.open('share-inbox').then(c => c.put('./__shared-meta', new Response(JSON.stringify({ text: 'Camera este gata, vă așteptăm.', hasImage: false }))))""")
+    page5.goto(URL + '?shared=1'); page5.wait_for_load_state('networkidle')
+    page5.wait_for_function("document.getElementById('outputB').textContent.startsWith('MM:')", timeout=10000)
+    ok('share: foreign text translated to Hebrew with auto-detect', page5.inner_text('#outputB') == 'MM:Camera este gata, vă așteptăm.' and 'langpair=Autodetect%7Che' in mm_calls[-1], mm_calls[-1][-60:])
+    ok('share: address cleaned and inbox emptied', '?shared' not in page5.url and page5.evaluate("caches.open('share-inbox').then(c => c.keys()).then(k => k.length)") == 0)
+    ok('share: auto-detected entry shows in history', 'זוהתה אוטומטית' in page5.locator('#historyList > div >> nth=0').inner_text())
+    page5.evaluate("""caches.open('share-inbox').then(c => c.put('./__shared-meta', new Response(JSON.stringify({ text: 'אני מגיע למלון בשעה שמונה בערב', hasImage: false }))))""")
+    page5.goto(URL + '?shared=1'); page5.wait_for_load_state('networkidle')
+    page5.wait_for_function("document.getElementById('outputA').textContent.startsWith('MM:')", timeout=8000)
+    ok('share: Hebrew text translated to speaker B language', 'langpair=he%7Cen' in mm_calls[-1])
+    b64 = __import__('base64').b64encode(open(img_path, 'rb').read()).decode()
+    page5.evaluate("""async b64 => { const bin = Uint8Array.from(atob(b64), ch => ch.charCodeAt(0)); const c = await caches.open('share-inbox');
+      await c.put('./__shared-image', new Response(new Blob([bin], { type: 'image/png' }), { headers: { 'content-type': 'image/png' } }));
+      await c.put('./__shared-meta', new Response(JSON.stringify({ text: '', hasImage: true }))); }""", b64)
+    page5.goto(URL + '?shared=1'); page5.wait_for_load_state('networkidle')
+    page5.wait_for_function("!document.getElementById('camResult').classList.contains('hidden')", timeout=8000)
+    ok('share: shared image goes to photo translation', page5.is_visible('#camModal') and 'אורז מוקפץ' in page5.inner_text('#camTranslation'))
+    ok('no JS errors (camera, prices, share)', not errs5, str(errs5))
+    ctx5.close()
+
     # 18. אחסון פגום לא מפיל את האפליקציה
     bad = """try{localStorage.setItem('tvt_cache_v2','null');localStorage.setItem('tvt_langA','__proto__');
       localStorage.setItem('tvt_history','{"x":1}');localStorage.setItem('tvt_favs','[1,null,{"a":2}]');}catch(e){}"""

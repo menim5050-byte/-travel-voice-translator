@@ -56,6 +56,19 @@ with sync_playwright() as p:
     DELAY['s'] = 0.0
     page.wait_for_timeout(500)
 
+    # "שתף אל המתורגמן": כמו אנדרואיד, טופס POST אל share-target. ה-SW שומר ומפנה לאפליקציה, והיא מטפלת.
+    page.evaluate("""() => { const f = document.createElement('form'); f.method = 'POST'; f.enctype = 'multipart/form-data'; f.action = './share-target';
+      const t = document.createElement('textarea'); t.name = 'text'; t.value = 'Bună ziua, mulțumim pentru rezervare'; f.appendChild(t);
+      document.body.appendChild(f); f.submit(); }""")
+    try:
+        page.wait_for_function("document.getElementById('inputB') && document.getElementById('inputB').value.startsWith('Bună ziua')", timeout=10000)
+        picked = True
+    except Exception:
+        picked = False
+    ok('share target: shared text arrives in the app (via the service worker)', picked, page.url)
+    ok('share target: inbox emptied and address cleaned', page.evaluate("caches.open('share-inbox').then(c => c.keys()).then(k => k.length)") == 0 and 'share-target' not in page.url and 'shared' not in page.url, page.url)
+    page.goto(URL); page.wait_for_load_state('networkidle')
+
     # עדכון כשלא באמצע שיחה: נטען אוטומטית
     deploy('v2')
     page.reload(); page.wait_for_load_state('domcontentloaded')
