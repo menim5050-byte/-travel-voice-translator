@@ -144,3 +144,53 @@ export function listen(langKey, { onStart, onInterim, onError, onEnd }, { silenc
   try { rec.start(); } catch (e) { if (onError) onError('start-failed'); return null; }
   return { stop: stopNow };
 }
+
+const FATAL_STT = new Set(['not-allowed', 'service-not-allowed', 'language-not-supported', 'unsupported']);
+
+/**
+ * האזנה רציפה (מצב "האזנה לשיחה"): משפט אחרי משפט, ומתחילה מחדש לבד אחרי כל משפט
+ * או כשהזיהוי נעצר, עד stop(). כל משפט שזוהה נמסר ל-onFinal.
+ * callbacks: onFinal(text), onInterim(text), onError(code, fatal), onState('listening' | 'stopped')
+ */
+export function listenLoop(langKey, { onFinal, onInterim, onError, onState }) {
+  let running = true, handle = null, active = false, timer = null, failures = 0, startFailures = 0, stoppedSent = false;
+  const stopped = () => { if (stoppedSent) return; stoppedSent = true; if (onState) onState('stopped'); };
+  const next = () => {
+    if (!running) { stopped(); return; }
+    // כשהמסך כבוי או האפליקציה ברקע אי אפשר להאזין: מחכים שתחזור, בלי לספור כשלון
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') { timer = setTimeout(next, 1000); return; }
+    handle = listen(langKey, {
+      onStart: () => { startFailures = 0; if (onState) onState('listening'); },
+      onInterim: t => { if (onInterim) onInterim(t); },
+      onError: code => {
+        if (code === 'no-speech' || code === 'aborted' || code === 'start-failed') return;
+        const fatal = FATAL_STT.has(code);
+        if (fatal) running = false;
+        if (code === 'network') failures++;
+        if (onError) onError(code, fatal);
+      },
+      onEnd: text => {
+        active = false;
+        if (onInterim) onInterim('');
+        if (text) { failures = 0; if (onFinal) onFinal(text); }
+        if (!running) { stopped(); return; }
+        timer = setTimeout(next, Math.min(200 * 2 ** failures, 4000));
+      }
+    }, { silenceMs: 1500 });
+    if (handle) active = true;
+    else {
+      // הזיהוי הקודם עוד לא שוחרר, או שהמכשיר דחה: מנסים שוב כמה פעמים
+      if (++startFailures > 5) { running = false; if (onError) onError('start-failed', true); stopped(); return; }
+      timer = setTimeout(next, 800);
+    }
+  };
+  next();
+  return {
+    stop: () => {
+      running = false;
+      clearTimeout(timer);
+      if (handle && active) handle.stop(); // המשפט האחרון עוד יימסר, ואז 'stopped'
+      else stopped();
+    }
+  };
+}

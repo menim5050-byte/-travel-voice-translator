@@ -1,7 +1,7 @@
 import { LANGUAGES } from './languages.js';
 import { PHRASES, CATEGORY_LABELS, HOTEL_TEMPLATE } from './phrasebook.js';
 import { translate, getEmail, setEmail, clearCache, cacheSize, isLang } from './translate.js';
-import { speak, stopSpeaking, listen, unlockAudio, hasVoice, voicesLoaded, speechSupport, isSpeaking } from './speech.js';
+import { speak, stopSpeaking, listen, listenLoop, unlockAudio, hasVoice, voicesLoaded, speechSupport, isSpeaking } from './speech.js';
 import { panelBStrings, PANEL_B_UI } from './ui-strings.js';
 const panelBStringsAll = () => PANEL_B_UI;
 
@@ -218,7 +218,7 @@ function speakText(text, langKey, { auto = false } = {}) {
 }
 
 /* ---------- היסטוריה ומועדפים ---------- */
-const SRC_LABEL = { phrasebook: 'שיחון', cache: 'זיכרון', mymemory: '', google: 'גיבוי Google', lingva: 'גיבוי', same: '', favorite: 'מועדף' };
+const SRC_LABEL = { phrasebook: 'שיחון', cache: 'זיכרון', mymemory: '', google: 'גיבוי Google', lingva: 'גיבוי', same: '', favorite: 'מועדף', listen: '' };
 
 const validEntry = e => e && typeof e === 'object' && isLang(e.sourceLang) && isLang(e.targetLang) &&
   typeof e.originalText === 'string' && typeof e.translatedText === 'string' && e.translatedText;
@@ -273,7 +273,8 @@ function renderHistory() {
     const badge = document.createElement('span');
     badge.className = isA ? 'text-sky-400 font-semibold pt-1.5' : 'text-emerald-400 font-semibold pt-1.5';
     const lbl = SRC_LABEL[item.source] ? ` · ${SRC_LABEL[item.source]}` : '';
-    badge.textContent = `${isA ? 'דובר א׳' : 'דובר ב׳'} · ${srcCfg.nameHe} ← ${tgtCfg.nameHe} · ${timeLabel(item.ts)}${lbl}`;
+    const who = item.source === 'listen' ? '🎧 האזנה' : (isA ? 'דובר א׳' : 'דובר ב׳');
+    badge.textContent = `${who} · ${srcCfg.nameHe} ← ${tgtCfg.nameHe} · ${timeLabel(item.ts)}${lbl}`;
 
     const actions = document.createElement('div');
     actions.className = 'flex items-center gap-1.5 shrink-0';
@@ -292,18 +293,18 @@ function renderHistory() {
     playBtn.textContent = '🔊 השמע';
     playBtn.addEventListener('click', () => { unlockAudio(); speakText(item.translatedText, item.targetLang); });
 
-    actions.appendChild(favBtn);
+    if (item.source !== 'listen') actions.appendChild(favBtn); // תמלול ארוך לא נכנס למועדפים
     actions.appendChild(playBtn);
     topRow.appendChild(badge);
     topRow.appendChild(actions);
 
     const origP = document.createElement('p');
-    origP.className = 'text-xs text-slate-300';
+    origP.className = 'text-xs text-slate-300 whitespace-pre-line';
     origP.dir = srcCfg.dir;
     origP.textContent = item.originalText;
 
     const transP = document.createElement('p');
-    transP.className = 'text-sm font-medium text-white';
+    transP.className = 'text-sm font-medium text-white whitespace-pre-line';
     transP.dir = tgtCfg.dir;
     transP.textContent = item.translatedText;
 
@@ -535,8 +536,8 @@ function fallbackCopy(text, cb) {
   if (cb) cb();
 }
 const copyTimers = new WeakMap();
-function copyOutput(speaker, btnEl) {
-  const text = state.lastTranslated[speaker];
+function copyOutput(speaker, btnEl, explicitText) {
+  const text = explicitText || state.lastTranslated[speaker];
   if (!text) { showBanner('אין עדיין תרגום להעתקה.', 'info'); return; }
   if (!btnEl.dataset.label) btnEl.dataset.label = btnEl.textContent;
   const done = () => {
@@ -723,7 +724,18 @@ function applyFaceToFace() {
 }
 
 let bigTextCurrentLang = 'en';
-let bigTextPushed = false;
+// כפתור "חזור" של אנדרואיד סוגר חלון פתוח (תצוגה גדולה / מצב האזנה) במקום לצאת מהאפליקציה
+const overlayPushed = { big: false, listen: false };
+let ignorePops = 0;
+function pushOverlay(name) {
+  if (overlayPushed[name]) return;
+  try { history.pushState({ tvtOverlay: name }, ''); overlayPushed[name] = true; } catch { /* ignore */ }
+}
+function popOverlay(name, fromPopState) {
+  if (!overlayPushed[name]) return;
+  overlayPushed[name] = false;
+  if (!fromPopState) { ignorePops++; try { history.back(); } catch { ignorePops--; } }
+}
 function openBigText(speaker) {
   const text = state.lastTranslated[speaker];
   if (!text) { showBanner('אין עדיין תרגום להגדלה. תרגם משפט קודם.', 'info'); return; }
@@ -744,7 +756,7 @@ function openBigText(speaker) {
   el.bigTextModal.classList.remove('hidden');
   el.bigTextModal.scrollTop = 0;
   placeBanner();
-  if (!bigTextPushed) { try { history.pushState({ tvtBigText: 1 }, ''); bigTextPushed = true; } catch { /* ignore */ } }
+  pushOverlay('big');
   try { el.bigTextCloseBtn.focus({ preventScroll: true }); } catch { /* ignore */ }
   keepScreenOn();
 }
@@ -752,14 +764,18 @@ function closeBigText(fromPopState) {
   if (el.bigTextModal.classList.contains('hidden')) return;
   el.bigTextModal.classList.add('hidden');
   placeBanner();
-  if (bigTextPushed) {
-    bigTextPushed = false;
-    if (!fromPopState) { try { history.back(); } catch { /* ignore */ } }
-  }
+  popOverlay('big', fromPopState);
 }
-// כפתור "חזור" של אנדרואיד סוגר את ההגדלה במקום לצאת מהאפליקציה
-window.addEventListener('popstate', () => { bigTextPushed = false; closeBigText(true); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeBigText(); });
+window.addEventListener('popstate', () => {
+  if (ignorePops > 0) { ignorePops--; return; }
+  if (!el.bigTextModal.classList.contains('hidden')) closeBigText(true);
+  else if (lm.open) closeListen(true);
+});
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (!el.bigTextModal.classList.contains('hidden')) closeBigText();
+  else if (lm.open) closeListen();
+});
 
 /* ---------- מלון ---------- */
 async function hotelGo() {
@@ -802,6 +818,279 @@ async function hotelGo() {
   finishResult('A', srcText, sourceLang, out, outLang, source, srcLang, false);
   openBigText('A'); // מראים לנהג מיד בגדול
 }
+
+
+/* ---------- מצב האזנה לשיחה ---------- */
+const LISTEN_DURATIONS = [60, 120, 180, 300, 600];
+const lEl = {
+  modal: $('listenModal'), open: $('listenOpenBtn'), close: $('listenCloseBtn'), lang: $('listenLang'),
+  durations: $('listenDurations'), target: $('listenTargetInfo'), setup: $('listenSetup'),
+  start: $('listenStartBtn'), timer: $('listenTimer'), status: $('listenStatus'),
+  rows: $('listenRows'), empty: $('listenEmpty'), interim: $('listenInterim'),
+  copy: $('listenCopyBtn'), share: $('listenShareBtn'), clear: $('listenClearBtn')
+};
+const savedSec = Number(loadJSON('tvt_listen_sec', 180));
+const lm = {
+  open: false, running: false, stopping: false, handle: null, rows: [], session: 0,
+  chain: Promise.resolve(), endAt: 0, tick: null, wake: null, lang: 'en', target: 'he',
+  sec: savedSec >= 5 && savedSec <= 3600 ? savedSec : 180, historyTs: 0
+};
+const fmtTime = sec => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+
+function renderListenSetup() {
+  if (!lEl.lang.options.length) {
+    for (const [k, L] of Object.entries(LANGUAGES)) {
+      const o = document.createElement('option');
+      o.value = k;
+      o.textContent = `${L.nameHe} (${L.native})`;
+      lEl.lang.appendChild(o);
+    }
+  }
+  lEl.durations.textContent = '';
+  LISTEN_DURATIONS.forEach(sec => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.sec = String(sec);
+    b.className = 'px-3 py-2 rounded-xl border text-sm transition ' + (sec === lm.sec
+      ? 'bg-amber-600 border-amber-500 text-white font-semibold'
+      : 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700');
+    b.textContent = `${sec / 60} דק׳`;
+    b.disabled = lm.running;
+    b.addEventListener('click', () => {
+      if (lm.running) return;
+      lm.sec = Number(b.dataset.sec) || sec;
+      saveJSON('tvt_listen_sec', lm.sec);
+      renderListenSetup();
+    });
+    lEl.durations.appendChild(b);
+  });
+  if (!lm.running) lEl.timer.textContent = fmtTime(lm.sec);
+  const t = LANGUAGES[el.langA.value];
+  lEl.target.textContent = lEl.lang.value === el.langA.value
+    ? `השפה זהה לשפה שלך (${t.nameHe}), ולכן יוצג רק הטקסט שזוהה.`
+    : `כל משפט יתורגם ל${t.nameHe} (השפה של דובר א׳) ויופיע מיד.`;
+}
+
+function setListenUi() {
+  const busy = lm.running;
+  lEl.start.textContent = lm.stopping ? 'מסיים...' : busy ? '⏹ עצור האזנה' : '🎧 התחל האזנה';
+  lEl.start.className = 'flex-1 py-3.5 rounded-xl font-semibold text-base text-white shadow-md transition ' +
+    (busy ? 'bg-rose-600 hover:bg-rose-500' + (lm.stopping ? '' : ' mic-listening') : 'bg-amber-600 hover:bg-amber-500');
+  lEl.lang.disabled = busy;
+  lEl.durations.querySelectorAll('button').forEach(b => { b.disabled = busy; });
+  lEl.setup.classList.toggle('opacity-60', busy);
+  lEl.clear.disabled = busy;
+}
+
+function renderListenRow(row) {
+  const box = lEl.rows;
+  const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+  if (!row.el) {
+    row.el = document.createElement('div');
+    row.el.className = 'rounded-xl bg-slate-950/70 border border-slate-800 p-2.5 flex flex-col gap-1';
+    row.el.addEventListener('click', () => {
+      if (row.status !== 'failed') return;
+      row.status = 'pending';
+      renderListenRow(row);
+      lm.chain = lm.chain.then(() => translateListenRow(row));
+    });
+    lEl.empty.classList.add('hidden');
+    box.appendChild(row.el);
+  }
+  row.el.textContent = '';
+  const main = document.createElement('p');
+  if (row.status === 'pending') { main.className = 'text-sm text-slate-500'; main.textContent = 'מתרגם...'; }
+  else if (row.status === 'failed') { main.className = 'text-sm text-rose-300 cursor-pointer'; main.textContent = 'לא תורגם. לחצו כאן כדי לנסות שוב.'; }
+  else {
+    main.className = 'text-base font-medium text-white leading-relaxed';
+    main.dir = LANGUAGES[row.target].dir;
+    main.lang = LANGUAGES[row.target].speechCode;
+    main.textContent = row.tr;
+  }
+  row.el.appendChild(main);
+  if (row.status !== 'same') {
+    const src = document.createElement('p');
+    src.className = 'text-xs text-slate-400 leading-relaxed';
+    src.dir = LANGUAGES[row.lang].dir;
+    src.lang = LANGUAGES[row.lang].speechCode;
+    src.textContent = row.src;
+    row.el.appendChild(src);
+  }
+  if (nearBottom) box.scrollTop = box.scrollHeight;
+}
+function renderListenRows() {
+  lEl.rows.textContent = '';
+  lEl.rows.appendChild(lEl.empty);
+  lEl.empty.classList.toggle('hidden', lm.rows.length > 0);
+  lm.rows.forEach(r => { r.el = null; renderListenRow(r); });
+}
+
+async function translateListenRow(row) {
+  if (row.session !== lm.session) return;
+  if (row.lang === row.target) { row.tr = row.src; row.status = 'same'; renderListenRow(row); return; }
+  try {
+    const r = await translate(row.src, row.lang, row.target);
+    row.tr = r.text;
+    row.status = 'ok';
+  } catch (e) {
+    row.status = 'failed';
+  }
+  if (row.session !== lm.session) return;
+  renderListenRow(row);
+  if (lm.historyTs) saveListenToHistory(); // תרגום שהושלם אחרי הסיום מתעדכן גם בהיסטוריה
+}
+
+function addListenRow(text) {
+  const row = { src: text, tr: '', status: 'pending', lang: lm.lang, target: lm.target, session: lm.session, el: null };
+  lm.rows.push(row);
+  renderListenRow(row);
+  lm.chain = lm.chain.then(() => translateListenRow(row)); // לפי הסדר, אחד אחרי השני
+}
+
+function listenDone(r) { return r.status === 'ok' || r.status === 'same'; }
+function saveListenToHistory() {
+  if (!lm.rows.some(listenDone)) return;
+  const entry = {
+    speaker: 'B', sourceLang: lm.rows[0].lang, targetLang: lm.rows[0].target,
+    originalText: lm.rows.map(r => r.src).join('\n'),
+    translatedText: lm.rows.map(r => (listenDone(r) ? r.tr : '…')).join('\n'),
+    ts: lm.historyTs || Date.now(), source: 'listen'
+  };
+  if (lm.historyTs) state.history = state.history.filter(h => !(h.source === 'listen' && h.ts === lm.historyTs));
+  lm.historyTs = entry.ts;
+  state.history.unshift(entry);
+  if (state.history.length > HISTORY_MAX) state.history.length = HISTORY_MAX;
+  saveHistory();
+  renderHistory();
+}
+
+function tickListen() {
+  const left = Math.max(0, Math.ceil((lm.endAt - Date.now()) / 1000));
+  lEl.timer.textContent = fmtTime(left);
+  if (left <= 0 && lm.running && !lm.stopping) stopListening();
+}
+
+function startListening() {
+  if (!speechSupport.stt) { showBanner(MIC_ERRORS.unsupported, 'warn'); return; }
+  unlockAudio();
+  stopRecognition();
+  stopSpeaking();
+  lm.lang = lEl.lang.value;
+  lm.target = el.langA.value;
+  lm.session++;
+  lm.rows = [];
+  lm.historyTs = 0;
+  lm.chain = Promise.resolve();
+  renderListenRows();
+  lm.running = true;
+  lm.stopping = false;
+  lm.endAt = Date.now() + lm.sec * 1000;
+  setListenUi();
+  lEl.status.textContent = 'מתחיל...';
+  lEl.interim.textContent = '';
+  lEl.interim.dir = LANGUAGES[lm.lang].dir;
+  keepScreenOn();
+  lm.wake = setInterval(keepScreenOn, 60000);
+  lm.tick = setInterval(tickListen, 250);
+  tickListen();
+  const session = lm.session;
+  lm.handle = listenLoop(lm.lang, {
+    onFinal: text => { if (session === lm.session && lm.running) addListenRow(text); },
+    onInterim: t => { if (session === lm.session) lEl.interim.textContent = t; },
+    onError: (code, fatal) => {
+      if (session !== lm.session) return;
+      const msg = code === 'network' ? 'אין חיבור לזיהוי הדיבור. מנסה שוב...' : (MIC_ERRORS[code] || `שגיאת זיהוי דיבור: ${code}`);
+      lEl.status.textContent = msg;
+      if (fatal) { showBanner(msg, 'error'); stopListening(); }
+    },
+    onState: st => {
+      if (session !== lm.session) return;
+      if (st === 'listening' && lm.running && !lm.stopping) lEl.status.textContent = `מאזין ל${LANGUAGES[lm.lang].nameHe}... הניחו את הטלפון קרוב לדוברים.`;
+      if (st === 'stopped') finishListening(session);
+    }
+  });
+  if (!lm.handle) finishListening(session);
+}
+
+function stopListening() {
+  if (!lm.running || lm.stopping) return;
+  lm.stopping = true;
+  clearInterval(lm.tick);
+  setListenUi();
+  lEl.status.textContent = 'מסיים...';
+  if (lm.handle) lm.handle.stop(); else finishListening(lm.session);
+}
+
+async function finishListening(session) {
+  if (session !== lm.session || !lm.running) return;
+  lm.running = false;
+  lm.stopping = false;
+  lm.handle = null;
+  clearInterval(lm.tick);
+  clearInterval(lm.wake);
+  lEl.interim.textContent = '';
+  setListenUi();
+  lEl.timer.textContent = fmtTime(lm.sec);
+  if (lm.rows.length) lEl.status.textContent = 'מסיים לתרגם...';
+  await lm.chain;
+  if (session !== lm.session) return;
+  if (!lm.rows.length) { lEl.status.textContent = 'ההאזנה הסתיימה. לא זוהה דיבור.'; return; }
+  saveListenToHistory();
+  lEl.status.textContent = `ההאזנה הסתיימה · ${lm.rows.length} משפטים · נשמר בהיסטוריה.`;
+}
+
+function openListen() {
+  stopRecognition();
+  stopSpeaking();
+  if (!lm.running && !lm.rows.length) lEl.lang.value = el.langB.value;
+  renderListenSetup();
+  if (!lEl.lang.value) lEl.lang.value = el.langB.value;
+  renderListenSetup();
+  setListenUi();
+  lm.open = true;
+  lEl.modal.classList.remove('hidden');
+  pushOverlay('listen');
+  placeBanner();
+}
+function closeListen(fromPopState) {
+  if (!lm.open) return;
+  if (lm.running) stopListening();
+  lm.open = false;
+  lEl.modal.classList.add('hidden');
+  placeBanner();
+  popOverlay('listen', fromPopState);
+}
+
+function listenTranslationText(withOriginal) {
+  return lm.rows.filter(listenDone).map(r => (withOriginal && r.status !== 'same' ? `${r.tr}\n(${r.src})` : r.tr)).join('\n');
+}
+
+lEl.open.addEventListener('click', openListen);
+lEl.close.addEventListener('click', () => closeListen());
+lEl.start.addEventListener('click', () => { if (lm.running) stopListening(); else startListening(); });
+lEl.lang.addEventListener('change', renderListenSetup);
+lEl.copy.addEventListener('click', () => {
+  const text = listenTranslationText(false);
+  if (!text) { showBanner('אין עדיין תרגום להעתקה.', 'info'); return; }
+  copyOutput(null, lEl.copy, text);
+});
+if (navigator.share) {
+  lEl.share.classList.remove('hidden');
+  lEl.share.addEventListener('click', () => {
+    const text = listenTranslationText(true);
+    if (!text) { showBanner('אין עדיין תרגום לשיתוף.', 'info'); return; }
+    navigator.share({ text }).catch(() => { /* בוטל */ });
+  });
+}
+lEl.clear.addEventListener('click', () => {
+  if (lm.running || !lm.rows.length) return;
+  if (!window.confirm('לנקות את התמלול מהמסך? (מה שנשמר בהיסטוריה נשאר)')) return;
+  lm.session++;
+  lm.rows = [];
+  lm.historyTs = 0;
+  renderListenRows();
+  lEl.status.textContent = '';
+});
 
 /* ---------- הגדרות והתקנה ---------- */
 function renderVoices() {
@@ -1062,7 +1351,7 @@ if ('serviceWorker' in navigator) {
   // מרעננים לבד רק כשבאמת לא משתמשים באפליקציה. אחרת שואלים.
   const busy = () => {
     const a = document.activeElement;
-    return !!state.activeMic || state.pending.A || state.pending.B || el.settings.open || isSpeaking() ||
+    return !!state.activeMic || state.pending.A || state.pending.B || el.settings.open || isSpeaking() || lm.open ||
       !el.bigTextModal.classList.contains('hidden') || (a && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT')) ||
       Date.now() - lastActivity < 2 * 60 * 1000;
   };

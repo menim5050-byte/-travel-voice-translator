@@ -13,7 +13,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="מתורגמן" />
-  <link rel="stylesheet" href="css/styles.css?v=0ebc523797" />
+  <link rel="stylesheet" href="css/styles.css?v=c09c260725" />
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
 
@@ -248,6 +248,15 @@
 
     </section>
 
+    <!-- Listen Mode entry -->
+    <section id="listenSection" class="f2f-hide bg-slate-900 border border-amber-700/40 rounded-2xl p-4 flex items-center justify-between gap-3">
+      <div class="flex flex-col gap-0.5 min-w-0">
+        <h3 class="text-sm font-semibold text-amber-200">🎧 מה מדברים סביבי?</h3>
+        <p class="text-xs text-slate-400">האזנה לשיחה לזמן שתבחר, ותרגום לעברית בכתב תוך כדי.</p>
+      </div>
+      <button id="listenOpenBtn" type="button" class="shrink-0 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-semibold shadow transition">מצב האזנה</button>
+    </section>
+
     <!-- Quick Phrases Bar -->
     <section id="phrasesSection" class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
       <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -306,6 +315,42 @@
           ✕ סגור
         </button>
       </div>
+    </div>
+  </div>
+
+  <!-- Listen Mode (full screen) -->
+  <div id="listenModal" role="dialog" aria-modal="true" aria-labelledby="listenTitle" class="hidden fixed inset-0 z-50 bg-slate-950 flex flex-col">
+    <div class="max-w-3xl w-full mx-auto flex flex-col h-full min-h-0 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] gap-3">
+      <div class="flex items-center justify-between gap-2">
+        <h2 id="listenTitle" class="font-bold text-base text-white">🎧 האזנה לשיחה ותרגום</h2>
+        <button id="listenCloseBtn" type="button" aria-label="סגור" class="w-11 h-11 rounded-lg bg-slate-800 hover:bg-slate-700">✕</button>
+      </div>
+      <div id="listenSetup" class="flex flex-col gap-2.5 bg-slate-900 border border-slate-800 rounded-2xl p-3">
+        <label class="flex items-center gap-2 text-sm">
+          <span class="text-slate-300 shrink-0">שפת הדוברים:</span>
+          <select id="listenLang" aria-label="שפת הדוברים" class="flex-1 min-w-0 bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"></select>
+        </label>
+        <div class="flex items-center gap-2 flex-wrap text-sm">
+          <span class="text-slate-300">משך:</span>
+          <div id="listenDurations" class="flex gap-2 flex-wrap"></div>
+        </div>
+        <p id="listenTargetInfo" class="text-xs text-slate-400"></p>
+      </div>
+      <div class="flex items-center gap-3">
+        <button id="listenStartBtn" type="button" class="flex-1 py-3.5 rounded-xl font-semibold text-base bg-amber-600 hover:bg-amber-500 text-white shadow-md transition">🎧 התחל האזנה</button>
+        <div id="listenTimer" dir="ltr" class="min-w-[4.5rem] text-center font-mono text-2xl text-amber-300">3:00</div>
+      </div>
+      <p id="listenStatus" class="text-xs text-slate-400 min-h-[1rem]" aria-live="polite"></p>
+      <div id="listenRows" class="flex-1 min-h-0 overflow-y-auto overscroll-contain flex flex-col gap-2 bg-slate-900/60 border border-slate-800 rounded-2xl p-3">
+        <p id="listenEmpty" class="text-xs text-slate-400 text-center py-6 leading-relaxed">הניחו את הטלפון קרוב לדוברים ולחצו "התחל האזנה".<br />כל משפט שיזוהה יתורגם ויופיע כאן.</p>
+      </div>
+      <p id="listenInterim" class="text-xs text-amber-300/90 min-h-[1rem] break-words"></p>
+      <div class="flex items-center gap-2 flex-wrap">
+        <button id="listenCopyBtn" type="button" class="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm">העתק תרגום</button>
+        <button id="listenShareBtn" type="button" class="hidden px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm">↗ שתף</button>
+        <button id="listenClearBtn" type="button" class="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm">נקה</button>
+      </div>
+      <p class="text-[11px] text-slate-500 leading-relaxed">האודיו לא נשמר, רק הטקסט, בטלפון שלך. זיהוי הדיבור עובר דרך Google ודורש אינטרנט. השאירו את המסך דלוק והאפליקציה פתוחה. לשיחה שאתם חלק ממנה, להדרכה, להכרזות או לשיחה במקום ציבורי. בישראל האזנה לשיחה פרטית של אחרים בלי הסכמה של אחד מהם אסורה (חוק האזנת סתר), ובחו״ל חל החוק המקומי.</p>
     </div>
   </div>
 
@@ -385,14 +430,14 @@
   <!-- כתובת עם גרסה לכל קובץ, כדי שהדפדפן לעולם לא יערבב קובץ ישן עם חדש. נכתב אוטומטית ע"י tools/stamp-sw.py -->
   <script type="importmap">
   { "imports": {
-    "./js/app.js": "./js/app.js?v=0ebc523797",
-    "./js/languages.js": "./js/languages.js?v=0ebc523797",
-    "./js/phrasebook.js": "./js/phrasebook.js?v=0ebc523797",
-    "./js/translate.js": "./js/translate.js?v=0ebc523797",
-    "./js/speech.js": "./js/speech.js?v=0ebc523797",
-    "./js/ui-strings.js": "./js/ui-strings.js?v=0ebc523797"
+    "./js/app.js": "./js/app.js?v=c09c260725",
+    "./js/languages.js": "./js/languages.js?v=c09c260725",
+    "./js/phrasebook.js": "./js/phrasebook.js?v=c09c260725",
+    "./js/translate.js": "./js/translate.js?v=c09c260725",
+    "./js/speech.js": "./js/speech.js?v=c09c260725",
+    "./js/ui-strings.js": "./js/ui-strings.js?v=c09c260725"
   } }
   </script>
-  <script type="module" src="js/app.js?v=0ebc523797"></script>
+  <script type="module" src="js/app.js?v=c09c260725"></script>
 </body>
 </html>
