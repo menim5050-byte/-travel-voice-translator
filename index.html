@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>מתורגמן קולי דו-כיווני | עברית · אנגלית · רומנית · ערבית · תאילנדית</title>
+  <title>מתורגמן קולי דו-כיווני | עברית · אנגלית · רומנית · ערבית · תאילנדית · רוסית</title>
   <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -37,7 +37,7 @@
         <span class="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-indigo-600 text-white text-lg shadow-sm" aria-hidden="true">🎙️</span>
         <div>
           <h1 class="text-base sm:text-lg font-bold text-white leading-tight">מתורגמן קולי לשיחה בין 2 אנשים</h1>
-          <p class="text-xs text-slate-400">עברית · אנגלית · רומנית · ערבית · תאילנדית</p>
+          <p class="text-xs text-slate-400">עברית · אנגלית · רומנית · ערבית · תאילנדית · רוסית</p>
         </div>
       </div>
 
@@ -114,6 +114,25 @@
             <option value="ro">🇷🇴 רומנית (Română)</option>
             <option value="ar">🇸🇦 ערבית (العربية)</option>
             <option value="th">🇹🇭 תאילנדית (ไทย)</option>
+            <option value="ru">🇷🇺 רוסית (Русский)</option>
+            <optgroup label="שפות טיולים נוספות">
+              <option value="es">🇪🇸 ספרדית (Español)</option>
+              <option value="fr">🇫🇷 צרפתית (Français)</option>
+              <option value="de">🇩🇪 גרמנית (Deutsch)</option>
+              <option value="it">🇮🇹 איטלקית (Italiano)</option>
+              <option value="pt">🇵🇹 פורטוגזית (Português)</option>
+              <option value="el">🇬🇷 יוונית (Ελληνικά)</option>
+              <option value="tr">🇹🇷 טורקית (Türkçe)</option>
+              <option value="hu">🇭🇺 הונגרית (Magyar)</option>
+              <option value="cs">🇨🇿 צ׳כית (Čeština)</option>
+              <option value="pl">🇵🇱 פולנית (Polski)</option>
+              <option value="nl">🇳🇱 הולנדית (Nederlands)</option>
+              <option value="ja">🇯🇵 יפנית (日本語)</option>
+              <option value="ko">🇰🇷 קוריאנית (한국어)</option>
+              <option value="zh">🇨🇳 סינית (中文)</option>
+              <option value="vi">🇻🇳 וייטנאמית (Tiếng Việt)</option>
+              <option value="hi">🇮🇳 הינדית (हिन्दी)</option>
+            </optgroup>
           </select>
         </div>
 
@@ -143,7 +162,10 @@
         <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 flex flex-col gap-1.5 min-h-[5.5rem]">
           <div class="flex items-center justify-between text-xs text-slate-400">
             <span id="targetTagA">תרגום עבור דובר ב׳:</span>
-            <button id="copyBtnA" type="button" class="hover:text-white transition">העתק</button>
+            <div class="flex items-center gap-3">
+              <button id="bigTextBtnA" type="button" class="hover:text-white transition">⛶ הגדל</button>
+              <button id="copyBtnA" type="button" class="hover:text-white transition">העתק</button>
+            </div>
           </div>
           <p id="outputA" class="text-base sm:text-lg font-medium text-emerald-300 leading-relaxed break-words">ממתין לדיבור או טקסט...</p>
         </div>
@@ -162,6 +184,25 @@
             <option value="ro">🇷🇴 רומנית (Română)</option>
             <option value="ar">🇸🇦 ערבית (العربية)</option>
             <option value="th">🇹🇭 תאילנדית (ไทย)</option>
+            <option value="ru">🇷🇺 רוסית (Русский)</option>
+            <optgroup label="שפות טיולים נוספות">
+              <option value="es">🇪🇸 ספרדית (Español)</option>
+              <option value="fr">🇫🇷 צרפתית (Français)</option>
+              <option value="de">🇩🇪 גרמנית (Deutsch)</option>
+              <option value="it">🇮🇹 איטלקית (Italiano)</option>
+              <option value="pt">🇵🇹 פורטוגזית (Português)</option>
+              <option value="el">🇬🇷 יוונית (Ελληνικά)</option>
+              <option value="tr">🇹🇷 טורקית (Türkçe)</option>
+              <option value="hu">🇭🇺 הונגרית (Magyar)</option>
+              <option value="cs">🇨🇿 צ׳כית (Čeština)</option>
+              <option value="pl">🇵🇱 פולנית (Polski)</option>
+              <option value="nl">🇳🇱 הולנדית (Nederlands)</option>
+              <option value="ja">🇯🇵 יפנית (日本語)</option>
+              <option value="ko">🇰🇷 קוריאנית (한국어)</option>
+              <option value="zh">🇨🇳 סינית (中文)</option>
+              <option value="vi">🇻🇳 וייטנאמית (Tiếng Việt)</option>
+              <option value="hi">🇮🇳 הינדית (हिन्दी)</option>
+            </optgroup>
           </select>
         </div>
 
@@ -191,7 +232,10 @@
         <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 flex flex-col gap-1.5 min-h-[5.5rem]">
           <div class="flex items-center justify-between text-xs text-slate-400">
             <span id="targetTagB">תרגום עבור דובר א׳:</span>
-            <button id="copyBtnB" type="button" class="hover:text-white transition">העתק</button>
+            <div class="flex items-center gap-3">
+              <button id="bigTextBtnB" type="button" class="hover:text-white transition">⛶ הגדל</button>
+              <button id="copyBtnB" type="button" class="hover:text-white transition">העתק</button>
+            </div>
           </div>
           <p id="outputB" class="text-base sm:text-lg font-medium text-sky-300 leading-relaxed break-words">ממתין לדיבור או טקסט...</p>
         </div>
@@ -210,6 +254,16 @@
         </div>
       </div>
       <div id="quickPhrasesGrid" class="flex flex-wrap gap-2"></div>
+      <div class="mt-3 pt-3 border-t border-slate-800 flex flex-wrap items-center gap-2">
+        <span class="text-xs text-slate-400 shrink-0">🏨 המלון שלי:</span>
+        <input id="hotelInput" type="text" placeholder="הקלד שם מלון או כתובת (יישמר אוטומטית)..." class="flex-1 min-w-[180px] bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-1.5 text-xs sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        <button id="hotelGoBtn" type="button" class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-semibold transition shadow shrink-0">
+          🚕 קח אותי למלון
+        </button>
+        <button id="hotelMapBtn" type="button" title="פתח ב-Google Maps" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs sm:text-sm font-medium transition shrink-0">
+          📍 מפות
+        </button>
+      </div>
     </section>
 
     <!-- Conversation History -->
@@ -225,6 +279,22 @@
 
   </main>
 
+  <!-- Fullscreen Big-Text Modal -->
+  <div id="bigTextModal" class="hidden fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center">
+    <div class="max-w-3xl w-full flex flex-col items-center gap-6">
+      <p id="bigTextLangLabel" class="text-sm text-slate-400"></p>
+      <p id="bigTextContent" class="text-3xl sm:text-5xl font-bold text-white leading-snug break-words w-full"></p>
+      <div class="flex items-center gap-3 mt-2">
+        <button id="bigTextSpeakBtn" type="button" class="px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-base shadow-lg transition">
+          🔊 השמע שוב
+        </button>
+        <button id="bigTextCloseBtn" type="button" class="px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-base transition">
+          ✕ סגור
+        </button>
+      </div>
+    </div>
+  </div>
+
   <script>
     (function () {
       'use strict';
@@ -234,22 +304,39 @@
         en: { nameHe: 'אנגלית', native: 'English', speechCode: 'en-US', ttsCode: 'en-US', dir: 'ltr' },
         ro: { nameHe: 'רומנית', native: 'Română', speechCode: 'ro-RO', ttsCode: 'ro-RO', dir: 'ltr' },
         ar: { nameHe: 'ערבית', native: 'العربية', speechCode: 'ar-SA', ttsCode: 'ar-SA', dir: 'rtl' },
-        th: { nameHe: 'תאילנדית', native: 'ไทย', speechCode: 'th-TH', ttsCode: 'th-TH', dir: 'ltr' }
+        th: { nameHe: 'תאילנדית', native: 'ไทย', speechCode: 'th-TH', ttsCode: 'th-TH', dir: 'ltr' },
+        ru: { nameHe: 'רוסית', native: 'Русский', speechCode: 'ru-RU', ttsCode: 'ru-RU', dir: 'ltr' },
+        es: { nameHe: 'ספרדית', native: 'Español', speechCode: 'es-ES', ttsCode: 'es-ES', dir: 'ltr' },
+        fr: { nameHe: 'צרפתית', native: 'Français', speechCode: 'fr-FR', ttsCode: 'fr-FR', dir: 'ltr' },
+        de: { nameHe: 'גרמנית', native: 'Deutsch', speechCode: 'de-DE', ttsCode: 'de-DE', dir: 'ltr' },
+        it: { nameHe: 'איטלקית', native: 'Italiano', speechCode: 'it-IT', ttsCode: 'it-IT', dir: 'ltr' },
+        pt: { nameHe: 'פורטוגזית', native: 'Português', speechCode: 'pt-PT', ttsCode: 'pt-PT', dir: 'ltr' },
+        el: { nameHe: 'יוונית', native: 'Ελληνικά', speechCode: 'el-GR', ttsCode: 'el-GR', dir: 'ltr' },
+        tr: { nameHe: 'טורקית', native: 'Türkçe', speechCode: 'tr-TR', ttsCode: 'tr-TR', dir: 'ltr' },
+        hu: { nameHe: 'הונגרית', native: 'Magyar', speechCode: 'hu-HU', ttsCode: 'hu-HU', dir: 'ltr' },
+        cs: { nameHe: 'צ׳כית', native: 'Čeština', speechCode: 'cs-CZ', ttsCode: 'cs-CZ', dir: 'ltr' },
+        pl: { nameHe: 'פולנית', native: 'Polski', speechCode: 'pl-PL', ttsCode: 'pl-PL', dir: 'ltr' },
+        nl: { nameHe: 'הולנדית', native: 'Nederlands', speechCode: 'nl-NL', ttsCode: 'nl-NL', dir: 'ltr' },
+        ja: { nameHe: 'יפנית', native: '日本語', speechCode: 'ja-JP', ttsCode: 'ja-JP', dir: 'ltr' },
+        ko: { nameHe: 'קוריאנית', native: '한국어', speechCode: 'ko-KR', ttsCode: 'ko-KR', dir: 'ltr' },
+        zh: { nameHe: 'סינית', native: '中文', speechCode: 'zh-CN', ttsCode: 'zh-CN', dir: 'ltr' },
+        vi: { nameHe: 'וייטנאמית', native: 'Tiếng Việt', speechCode: 'vi-VN', ttsCode: 'vi-VN', dir: 'ltr' },
+        hi: { nameHe: 'הינדית', native: 'हिन्दी', speechCode: 'hi-IN', ttsCode: 'hi-IN', dir: 'ltr' }
       };
 
       const QUICK_PHRASES = [
-        { label: 'שלום', he: 'שלום', en: 'Hello', ro: 'Bună ziua', ar: 'مرحبا', th: 'สวัสดี' },
-        { label: 'תודה רבה', he: 'תודה רבה', en: 'Thank you very much', ro: 'Mulțumesc mult', ar: 'شكراً جزيلاً', th: 'ขอบคุณมาก' },
-        { label: 'כן', he: 'כן', en: 'Yes', ro: 'Da', ar: 'نعم', th: 'ใช่' },
-        { label: 'לא', he: 'לא', en: 'No', ro: 'Nu', ar: 'لا', th: 'ไม่' },
-        { label: 'כמה זה עולה?', he: 'כמה זה עולה?', en: 'How much does this cost?', ro: 'Cât costă?', ar: 'كم يكلف هذا؟', th: 'ราคาเท่าไหร่' },
-        { label: 'איפה תחנת הרכבת?', he: 'איפה תחנת הרכבת?', en: 'Where is the train station?', ro: 'Unde este gara?', ar: 'أين محطة القطار؟', th: 'สถานีรถไฟอยู่ที่ไหน' },
-        { label: 'איפה השירותים?', he: 'איפה השירותים?', en: 'Where is the restroom?', ro: 'Unde este toaleta?', ar: 'أين الحمام؟', th: 'ห้องน้ำอยู่ที่ไหน' },
-        { label: 'אפשר חשבון בבקשה?', he: 'אפשר חשבון בבקשה?', en: 'Can I have the bill, please?', ro: 'Nota de plată, vă rog?', ar: 'الحساب من فضلك؟', th: 'ขอเช็คบิลด้วยครับ' },
-        { label: 'בבקשה חכה רגע', he: 'בבקשה חכה רגע', en: 'Please wait a moment', ro: 'Vă rog să așteptați un moment', ar: 'من فضلك انتظر لحظة', th: 'กรุณารอสักครู่' },
-        { label: 'לא הבנתי, אפשר שוב?', he: 'לא הבנתי, אפשר שוב?', en: 'I did not understand, can you repeat?', ro: 'Nu am înțeles, puteți repeta?', ar: 'لم أفهم، هل يمكنك الإعادة؟', th: 'ฉันไม่เข้าใจ ช่วยพูดอีกครั้งได้ไหม' },
-        { label: 'צריך עזרה', he: 'אני צריך עזרה בבקשה', en: 'I need help, please', ro: 'Am nevoie de ajutor, vă rog', ar: 'أحتاج إلى مساعدة من فضلك', th: 'ขอความช่วยเหลือหน่อยครับ' },
-        { label: 'הכל בסדר', he: 'הכל בסדר', en: 'Everything is fine', ro: 'Totul este în regulă', ar: 'كل شيء على ما يرام', th: 'ทุกอย่างเรียบร้อยดี' }
+        { label: 'שלום', he: 'שלום', en: 'Hello', ro: 'Bună ziua', ar: 'مرحبا', th: 'สวัสดี', ru: 'Здравствуйте' },
+        { label: 'תודה רבה', he: 'תודה רבה', en: 'Thank you very much', ro: 'Mulțumesc mult', ar: 'شكراً جزيلاً', th: 'ขอบคุณมาก', ru: 'Большое спасибо' },
+        { label: 'כן', he: 'כן', en: 'Yes', ro: 'Da', ar: 'نعم', th: 'ใช่', ru: 'Да' },
+        { label: 'לא', he: 'לא', en: 'No', ro: 'Nu', ar: 'لا', th: 'ไม่', ru: 'Нет' },
+        { label: 'כמה זה עולה?', he: 'כמה זה עולה?', en: 'How much does this cost?', ro: 'Cât costă?', ar: 'كم يكلف هذا؟', th: 'ราคาเท่าไหร่', ru: 'Сколько это стоит?' },
+        { label: 'איפה תחנת הרכבת?', he: 'איפה תחנת הרכבת?', en: 'Where is the train station?', ro: 'Unde este gara?', ar: 'أين محطة القطار؟', th: 'สถานีรถไฟอยู่ที่ไหน', ru: 'Где находится вокзал?' },
+        { label: 'איפה השירותים?', he: 'איפה השירותים?', en: 'Where is the restroom?', ro: 'Unde este toaleta?', ar: 'أين الحمام؟', th: 'ห้องน้ำอยู่ที่ไหน', ru: 'Где туалет?' },
+        { label: 'אפשר חשבון בבקשה?', he: 'אפשר חשבון בבקשה?', en: 'Can I have the bill, please?', ro: 'Nota de plată, vă rog?', ar: 'الحساب من فضلك؟', th: 'ขอเช็คบิลด้วยครับ', ru: 'Счёт, пожалуйста' },
+        { label: 'בבקשה חכה רגע', he: 'בבקשה חכה רגע', en: 'Please wait a moment', ro: 'Vă rog să așteptați un moment', ar: 'من فضلك انتظر لحظة', th: 'กรุณารอสักครู่', ru: 'Пожалуйста, подождите минуту' },
+        { label: 'לא הבנתי, אפשר שוב?', he: 'לא הבנתי, אפשר שוב?', en: 'I did not understand, can you repeat?', ro: 'Nu am înțeles, puteți repeta?', ar: 'لم أفهم، هل يمكنك الإعادة؟', th: 'ฉันไม่เข้าใจ ช่วยพูดอีกครั้งได้ไหม', ru: 'Я не понял, повторите, пожалуйста' },
+        { label: 'צריך עזרה', he: 'אני צריך עזרה בבקשה', en: 'I need help, please', ro: 'Am nevoie de ajutor, vă rog', ar: 'أحتاج إلى مساعدة من فضلك', th: 'ขอความช่วยเหลือหน่อยครับ', ru: 'Мне нужна помощь, пожалуйста' },
+        { label: 'הכל בסדר', he: 'הכל בסדר', en: 'Everything is fine', ro: 'Totul este în regulă', ar: 'كل شيء على ما يرام', th: 'ทุกอย่างเรียบร้อยดี', ru: 'Всё хорошо' }
       ];
 
       const state = {
@@ -285,8 +372,18 @@
         targetTagB: document.getElementById('targetTagB'),
         speakOutBtnA: document.getElementById('speakOutBtnA'),
         speakOutBtnB: document.getElementById('speakOutBtnB'),
+        bigTextBtnA: document.getElementById('bigTextBtnA'),
+        bigTextBtnB: document.getElementById('bigTextBtnB'),
         copyBtnA: document.getElementById('copyBtnA'),
         copyBtnB: document.getElementById('copyBtnB'),
+        hotelInput: document.getElementById('hotelInput'),
+        hotelGoBtn: document.getElementById('hotelGoBtn'),
+        hotelMapBtn: document.getElementById('hotelMapBtn'),
+        bigTextModal: document.getElementById('bigTextModal'),
+        bigTextLangLabel: document.getElementById('bigTextLangLabel'),
+        bigTextContent: document.getElementById('bigTextContent'),
+        bigTextSpeakBtn: document.getElementById('bigTextSpeakBtn'),
+        bigTextCloseBtn: document.getElementById('bigTextCloseBtn'),
         autoSpeakToggle: document.getElementById('autoSpeakToggle'),
         flipModeBtn: document.getElementById('flipModeBtn'),
         flipModeLabel: document.getElementById('flipModeLabel'),
@@ -715,20 +812,23 @@
             const isA = actor === 'A';
             const sourceLang = isA ? el.langA.value : el.langB.value;
             const targetLang = isA ? el.langB.value : el.langA.value;
-            const sourceText = p[sourceLang] || p.en;
-            const targetText = p[targetLang] || p.en;
-            const inputEl = isA ? el.inputA : el.inputB;
-            const outputEl = isA ? el.outputA : el.outputB;
-
-            inputEl.value = sourceText;
-            outputEl.textContent = targetText;
-            state.lastSourceText[actor] = sourceText;
-            state.lastSourceLang[actor] = sourceLang;
-            state.lastTranslated[actor] = targetText;
-            state.lastTargetLang[actor] = targetLang;
-            addHistoryEntry(actor, sourceLang, targetLang, sourceText, targetText);
-            if (el.autoSpeakToggle.checked) {
-              speakText(targetText, targetLang);
+            const sourceText = p[sourceLang];
+            const targetText = p[targetLang];
+            if (sourceText && targetText) {
+              const inputEl = isA ? el.inputA : el.inputB;
+              const outputEl = isA ? el.outputA : el.outputB;
+              inputEl.value = sourceText;
+              outputEl.textContent = targetText;
+              state.lastSourceText[actor] = sourceText;
+              state.lastSourceLang[actor] = sourceLang;
+              state.lastTranslated[actor] = targetText;
+              state.lastTargetLang[actor] = targetLang;
+              addHistoryEntry(actor, sourceLang, targetLang, sourceText, targetText);
+              if (el.autoSpeakToggle.checked) {
+                speakText(targetText, targetLang);
+              }
+            } else {
+              handleTranslate(actor, sourceText || p.en, true);
             }
           });
           el.quickPhrasesGrid.appendChild(btn);
@@ -783,14 +883,35 @@
       el.copyBtnA.addEventListener('click', () => copyOutput('A', el.copyBtnA));
       el.copyBtnB.addEventListener('click', () => copyOutput('B', el.copyBtnB));
 
-      el.langA.addEventListener('change', updateDirectionsAndTags);
-      el.langB.addEventListener('change', updateDirectionsAndTags);
+      function savePrefs() {
+        try {
+          localStorage.setItem('tvt_langA', el.langA.value);
+          localStorage.setItem('tvt_langB', el.langB.value);
+          localStorage.setItem('tvt_hotel', el.hotelInput.value);
+        } catch (_) {}
+      }
+
+      function loadPrefs() {
+        try {
+          const savedA = localStorage.getItem('tvt_langA');
+          const savedB = localStorage.getItem('tvt_langB');
+          const savedHotel = localStorage.getItem('tvt_hotel');
+          if (savedA && LANGUAGES[savedA]) el.langA.value = savedA;
+          if (savedB && LANGUAGES[savedB]) el.langB.value = savedB;
+          if (savedHotel) el.hotelInput.value = savedHotel;
+        } catch (_) {}
+      }
+
+      el.langA.addEventListener('change', () => { updateDirectionsAndTags(); savePrefs(); });
+      el.langB.addEventListener('change', () => { updateDirectionsAndTags(); savePrefs(); });
+      el.hotelInput.addEventListener('input', savePrefs);
 
       el.swapLangsBtn.addEventListener('click', () => {
         const tmp = el.langA.value;
         el.langA.value = el.langB.value;
         el.langB.value = tmp;
         updateDirectionsAndTags();
+        savePrefs();
       });
 
       el.flipModeBtn.addEventListener('click', () => {
@@ -847,7 +968,59 @@
         setActiveTurn(state.activeTurn === 'A' ? 'B' : 'A');
       });
 
+      let bigTextCurrentLang = 'en';
+      function openBigText(speaker) {
+        const text = state.lastTranslated[speaker];
+        if (!text) {
+          showBanner('אין עדיין תרגום להגדלה. תרגם משפט קודם.', 'info');
+          return;
+        }
+        const langKey = state.lastTargetLang[speaker] || 'en';
+        const cfg = LANGUAGES[langKey] || LANGUAGES.en;
+        bigTextCurrentLang = langKey;
+        el.bigTextLangLabel.textContent = `תצוגה ברורה (${cfg.nameHe} · ${cfg.native})`;
+        el.bigTextContent.dir = cfg.dir;
+        el.bigTextContent.textContent = text;
+        el.bigTextModal.classList.remove('hidden');
+      }
+
+      el.bigTextBtnA.addEventListener('click', () => openBigText('A'));
+      el.bigTextBtnB.addEventListener('click', () => openBigText('B'));
+      el.bigTextCloseBtn.addEventListener('click', () => el.bigTextModal.classList.add('hidden'));
+      el.bigTextModal.addEventListener('click', (e) => {
+        if (e.target === el.bigTextModal) el.bigTextModal.classList.add('hidden');
+      });
+      el.bigTextSpeakBtn.addEventListener('click', () => {
+        unlockSpeech();
+        if (el.bigTextContent.textContent) speakText(el.bigTextContent.textContent, bigTextCurrentLang);
+      });
+
+      el.hotelGoBtn.addEventListener('click', () => {
+        unlockSpeech();
+        const hotel = el.hotelInput.value.trim();
+        if (!hotel) {
+          showBanner('הקלד קודם את שם המלון או הכתובת בשדה שליד הכפתור.', 'info');
+          el.hotelInput.focus();
+          return;
+        }
+        savePrefs();
+        setActiveTurn('A');
+        handleTranslate('A', `בבקשה קח אותי לכתובת הזו: ${hotel}`, true);
+      });
+
+      el.hotelMapBtn.addEventListener('click', () => {
+        const hotel = el.hotelInput.value.trim();
+        if (!hotel) {
+          showBanner('הקלד קודם את שם המלון או הכתובת כדי לפתוח במפות.', 'info');
+          el.hotelInput.focus();
+          return;
+        }
+        savePrefs();
+        window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(hotel)}`, '_blank', 'noopener,noreferrer');
+      });
+
       // Init
+      loadPrefs();
       setActiveTurn('A');
       updateDirectionsAndTags();
       renderQuickPhrases();
