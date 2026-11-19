@@ -83,12 +83,19 @@ export function speak(text, langKey, { onStart, onEnd, onError } = {}) {
 
 export function stopSpeaking() { speakGen++; try { if (synth) synth.cancel(); } catch { /* ignore */ } }
 
+// זמן שקט שאחריו מסיימים לבד. בחלק מהשפות (למשל רומנית) זיהוי הדיבור בטלפון
+// לא מחליט לבד שהמשפט נגמר וממשיך להאזין, ולכן האפליקציה מזהה שקט בעצמה.
+export const SILENCE_MS = 1800;
+const AFTER_FINAL_MS = 400;   // אחרי תוצאה סופית מסיימים כמעט מיד
+const MAX_LISTEN_MS = 30000;  // הגבלה לבטיחות
+const STOP_GRACE_MS = 1500;   // מכשיר שלא מסיים אחרי stop: מסיימים בעצמנו
+
 /**
  * מאזין פעם אחת.
  * callbacks: onStart(), onInterim(text), onError(code), onEnd(capturedText)
- * onEnd נקרא תמיד בסיום. הטקסט הוא התוצאה הסופית, ואם אין כזו, האחרונה שזוהתה.
+ * onEnd נקרא פעם אחת בדיוק בסיום. הטקסט הוא התוצאה הסופית, ואם אין כזו, האחרונה שזוהתה.
  */
-export function listen(langKey, { onStart, onInterim, onError, onEnd }) {
+export function listen(langKey, { onStart, onInterim, onError, onEnd }, { silenceMs = SILENCE_MS } = {}) {
   if (!SR) { if (onError) onError('unsupported'); return null; }
   const rec = new SR();
   rec.lang = LANGUAGES[langKey].speechCode;
@@ -97,19 +104,43 @@ export function listen(langKey, { onStart, onInterim, onError, onEnd }) {
   rec.maxAlternatives = 1;
   let finalText = '';
   let lastInterim = '';
+  let ended = false, stopping = false;
+  let silenceTimer = null, maxTimer = null, graceTimer = null;
 
-  rec.onstart = () => { if (onStart) onStart(); };
+  const finish = () => {
+    if (ended) return;
+    ended = true;
+    clearTimeout(silenceTimer); clearTimeout(maxTimer); clearTimeout(graceTimer);
+    if (onEnd) onEnd((finalText || lastInterim).trim());
+  };
+  const stopNow = () => {
+    if (ended || stopping) return;
+    stopping = true;
+    clearTimeout(silenceTimer);
+    try { rec.stop(); } catch { /* ignore */ }
+    graceTimer = setTimeout(() => { try { rec.abort(); } catch { /* ignore */ } finish(); }, STOP_GRACE_MS);
+  };
+  const armSilence = ms => { clearTimeout(silenceTimer); silenceTimer = setTimeout(stopNow, ms); };
+
+  rec.onstart = () => {
+    maxTimer = setTimeout(stopNow, MAX_LISTEN_MS);
+    if (onStart) onStart();
+  };
   rec.onresult = ev => {
     let interim = '';
+    let gotFinal = false;
     for (let i = ev.resultIndex; i < ev.results.length; i++) {
       const t = ev.results[i][0].transcript;
-      if (ev.results[i].isFinal) finalText += t + ' '; else interim += t;
+      if (ev.results[i].isFinal) { finalText += t + ' '; gotFinal = true; } else interim += t;
     }
     lastInterim = interim;
     if (interim && onInterim) onInterim(interim, !finalText.trim());
+    if (stopping) return;
+    if (gotFinal && !interim) armSilence(AFTER_FINAL_MS);
+    else if (interim || gotFinal) armSilence(silenceMs); // כל עוד מגיעות מילים, הזמן מתאפס
   };
   rec.onerror = ev => { if (onError) onError(ev.error); };
-  rec.onend = () => { if (onEnd) onEnd((finalText || lastInterim).trim()); };
+  rec.onend = finish;
   try { rec.start(); } catch (e) { if (onError) onError('start-failed'); return null; }
-  return { stop: () => { try { rec.stop(); } catch { /* ignore */ } } };
+  return { stop: stopNow };
 }

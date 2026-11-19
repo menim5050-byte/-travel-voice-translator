@@ -24,7 +24,12 @@ MOCK = r"""
     const rec = this; rec.stopped = false; window.__recs.push(rec);
     rec.start = () => setTimeout(() => rec.onstart && rec.onstart(), 10);
     rec.stop = () => { if (rec.stopped) return; rec.stopped = true; setTimeout(() => rec.onend && rec.onend(), 80); };
+    rec.abort = rec.stop;
   };
+  const active = () => [...window.__recs].reverse().find(r => !r.stopped);
+  // כמו רומנית בטלפון: תוצאות חלקיות, והזיהוי לא מסיים לבד
+  window.__interim = t => active().onresult({resultIndex:0, results:[Object.assign([{transcript:t}], {isFinal:false})]});
+  window.__finalNoEnd = t => active().onresult({resultIndex:0, results:[Object.assign([{transcript:t}], {isFinal:true})]});
   window.__say = t => {
     const rec = [...window.__recs].reverse().find(r => !r.stopped);
     rec.onresult({resultIndex:0, results:[Object.assign([{transcript:t}], {isFinal:true})]});
@@ -224,6 +229,29 @@ with sync_playwright() as p:
     page.click('#hotelGoBtn'); page.wait_for_timeout(400)
     ok('hotel without network for Japanese: English + hotel name', page.inner_text('#bigTextContent') == 'Please take me to this address: Hotel Gracery', page.inner_text('#bigTextContent'))
     page.click('#bigTextCloseBtn'); page.select_option('#langB', 'en'); reset()
+
+    # 20. דובר ב׳ ברומנית: הזיהוי לא מסיים לבד, האפליקציה מסיימת אחרי שקט ומתרגמת
+    page.check('#autoTranslateOnStop'); page.select_option('#langB', 'ro')
+    tap('#micBtnB'); page.wait_for_timeout(100)
+    page.evaluate("window.__interim('Bună ziua')"); page.wait_for_timeout(400)
+    page.evaluate("window.__interim('Bună ziua, unde este gara')")
+    t0 = time.time()
+    page.wait_for_function("document.getElementById('outputB').textContent.startsWith('MM:')", timeout=6000)
+    dt = time.time() - t0
+    ok('B in Romanian: ends after silence by itself and translates', 1.5 < dt < 3.5 and 'mic-listening' not in cls('#micBtnB') and page.inner_text('#outputB') == 'MM:Bună ziua, unde este gara', f'{dt:.1f}s {page.inner_text("#outputB")}')
+    tap('#micBtnB'); page.wait_for_timeout(100)
+    t0 = time.time()
+    page.evaluate("window.__finalNoEnd('Mulțumesc pentru ajutor')")
+    page.wait_for_function("document.getElementById('outputB').textContent === 'MM:Mulțumesc pentru ajutor'", timeout=4000)
+    dt = time.time() - t0
+    ok('B: final result without end from recognizer -> translated within ~0.5s', dt < 1.2, f'{dt:.1f}s')
+    tap('#micBtnA'); page.wait_for_timeout(100)
+    page.evaluate("window.__interim('אני מדבר ועוצר לחשוב')"); page.wait_for_timeout(1200)
+    page.evaluate("window.__interim('אני מדבר ועוצר לחשוב רגע ואז ממשיך')"); page.wait_for_timeout(1200)
+    ok('short pause (1.2s) does not cut the sentence', 'mic-listening' in cls('#micBtnA'))
+    page.wait_for_function("document.getElementById('outputA').textContent === 'MM:אני מדבר ועוצר לחשוב רגע ואז ממשיך'", timeout=4000)
+    ok('after the pause, the full sentence is translated', True)
+    page.uncheck('#autoTranslateOnStop'); page.select_option('#langB', 'en'); reset()
     ok('no JS errors (main page)', not errs, str(errs))
     ctx.close()
 
