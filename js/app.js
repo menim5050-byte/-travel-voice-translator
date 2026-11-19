@@ -465,7 +465,7 @@ function refreshSettingsInfo() {
     const parts = keys.map(k => `${LANGUAGES[k].nameHe}: ${hasVoice(k) ? '✓' : '✗'}`);
     el.voiceInfo.textContent = `קולות במכשיר: ${parts.join(' · ')}. סימן ✗ אומר שחסר קול, ואפשר להתקין אותו בהגדרות הטלפון (המרת טקסט לדיבור).`;
   }
-  if (getEmail()) { el.emailStatus.className = 'text-xs text-emerald-400 min-h-[1rem]'; el.emailStatus.textContent = 'נשמר ✓'; }
+  if (getEmail() && el.emailStatus) { el.emailStatus.className = 'text-xs text-emerald-400 min-h-[1rem]'; el.emailStatus.textContent = 'נשמר ✓'; }
   el.cacheInfo.textContent = `תרגומים שמורים בזיכרון: ${cacheSize()}`;
 }
 
@@ -580,6 +580,7 @@ el.closeSettings.addEventListener('click', () => el.settings.close());
 el.settings.addEventListener('click', e => { if (e.target === el.settings) el.settings.close(); });
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 function saveEmail() {
+  if (!el.emailStatus) { setEmail(el.optEmail.value.trim()); return; }
   const v = el.optEmail.value.trim();
   if (!v) { setEmail(''); el.emailStatus.className = 'text-xs text-slate-400 min-h-[1rem]'; el.emailStatus.textContent = 'לא מוגדר אימייל.'; return; }
   if (!EMAIL_RE.test(v)) { el.emailStatus.className = 'text-xs text-amber-300 min-h-[1rem]'; el.emailStatus.textContent = 'כתובת האימייל לא תקינה, ולכן לא נשמרה.'; return; }
@@ -589,7 +590,7 @@ function saveEmail() {
 }
 el.optEmail.addEventListener('input', saveEmail);   // נשמר מיד בזמן ההקלדה
 el.optEmail.addEventListener('change', saveEmail);
-el.saveEmailBtn.addEventListener('click', saveEmail);
+if (el.saveEmailBtn) el.saveEmailBtn.addEventListener('click', saveEmail);
 el.clearCacheBtn.addEventListener('click', () => { clearCache(); refreshSettingsInfo(); });
 el.installBtn.addEventListener('click', async () => {
   if (!deferredInstall) return;
@@ -615,5 +616,13 @@ if (!speechSupport.stt) {
 if (!navigator.onLine) window.dispatchEvent(new Event('offline'));
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(() => { /* האפליקציה עובדת גם בלי SW */ });
+  // כשגרסה חדשה משתלטת, מרעננים פעם אחת כדי שהדף והקבצים יהיו מאותה גרסה
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloaded) return;
+    reloaded = true;
+    location.reload();
+  });
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => { /* האפליקציה עובדת גם בלי SW */ });
 }

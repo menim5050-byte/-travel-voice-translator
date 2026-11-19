@@ -170,7 +170,7 @@ with sync_playwright() as p:
     page.wait_for_function("navigator.serviceWorker.ready.then(()=>true)")
     page.reload(); page.wait_for_load_state('networkidle')
     ok('SW controlling', page.evaluate("!!navigator.serviceWorker.controller"))
-    cached=page.evaluate("caches.open('tvt-v4').then(c=>c.keys()).then(k=>k.map(r=>new URL(r.url).pathname.split('/').pop()||'/'))")
+    cached=page.evaluate("caches.open('tvt-v5').then(c=>c.keys()).then(k=>k.map(r=>new URL(r.url).pathname.split('/').pop()||'/'))")
     need={'index.html','manifest.json','styles.css','app.js','languages.js','phrasebook.js','translate.js','speech.js','icon-192.png','icon-512.png','icon-maskable-512.png','apple-touch-icon.png'}
     ok('all assets cached', need<=set(cached), str(sorted(need-set(cached))))
     ctx.set_offline(True)
