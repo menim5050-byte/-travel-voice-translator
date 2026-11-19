@@ -13,7 +13,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="מתורגמן" />
-  <link rel="stylesheet" href="css/styles.css?v=c09c260725" />
+  <link rel="stylesheet" href="css/styles.css?v=547cc28386" />
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
 
@@ -252,7 +252,7 @@
     <section id="listenSection" class="f2f-hide bg-slate-900 border border-amber-700/40 rounded-2xl p-4 flex items-center justify-between gap-3">
       <div class="flex flex-col gap-0.5 min-w-0">
         <h3 class="text-sm font-semibold text-amber-200">🎧 מה מדברים סביבי?</h3>
-        <p class="text-xs text-slate-400">האזנה לשיחה לזמן שתבחר, ותרגום לעברית בכתב תוך כדי.</p>
+        <p class="text-xs text-slate-400">הקלטה שקטה לזמן שתבחר, ובסוף כל השיחה מתורגמת לעברית בכתב.</p>
       </div>
       <button id="listenOpenBtn" type="button" class="shrink-0 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-semibold shadow transition">מצב האזנה</button>
     </section>
@@ -325,7 +325,10 @@
         <h2 id="listenTitle" class="font-bold text-base text-white">🎧 האזנה לשיחה ותרגום</h2>
         <button id="listenCloseBtn" type="button" aria-label="סגור" class="w-11 h-11 rounded-lg bg-slate-800 hover:bg-slate-700">✕</button>
       </div>
+      <button id="listenSetupToggle" type="button" class="hidden self-start text-xs text-amber-300 underline py-1">⚙ שינוי הגדרות הקלטה</button>
       <div id="listenSetup" class="flex flex-col gap-2.5 bg-slate-900 border border-slate-800 rounded-2xl p-3">
+        <div id="listenModes" class="grid grid-cols-2 gap-2"></div>
+        <p id="listenKeyHint" class="hidden text-xs text-amber-200 bg-amber-950/60 border border-amber-800/60 rounded-xl px-3 py-2 leading-relaxed">להקלטה שקטה צריך פעם אחת מפתח חינמי של Groq. <button id="listenKeyBtn" type="button" class="underline font-semibold">פתח הגדרות</button></p>
         <label class="flex items-center gap-2 text-sm">
           <span class="text-slate-300 shrink-0">שפת הדוברים:</span>
           <select id="listenLang" aria-label="שפת הדוברים" class="flex-1 min-w-0 bg-slate-800 border border-slate-700 text-slate-100 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"></select>
@@ -340,6 +343,7 @@
         <button id="listenStartBtn" type="button" class="flex-1 py-3.5 rounded-xl font-semibold text-base bg-amber-600 hover:bg-amber-500 text-white shadow-md transition">🎧 התחל האזנה</button>
         <div id="listenTimer" dir="ltr" class="min-w-[4.5rem] text-center font-mono text-2xl text-amber-300">3:00</div>
       </div>
+      <div id="listenMeter" class="hidden h-2 rounded-full bg-slate-800 overflow-hidden" aria-hidden="true"><div id="listenMeterBar" class="h-full w-0 bg-emerald-500"></div></div>
       <p id="listenStatus" class="text-xs text-slate-400 min-h-[1rem]" aria-live="polite"></p>
       <div id="listenRows" class="flex-1 min-h-0 overflow-y-auto overscroll-contain flex flex-col gap-2 bg-slate-900/60 border border-slate-800 rounded-2xl p-3">
         <p id="listenEmpty" class="text-xs text-slate-400 text-center py-6 leading-relaxed">הניחו את הטלפון קרוב לדוברים ולחצו "התחל האזנה".<br />כל משפט שיזוהה יתורגם ויופיע כאן.</p>
@@ -348,9 +352,11 @@
       <div class="flex items-center gap-2 flex-wrap">
         <button id="listenCopyBtn" type="button" class="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm">העתק תרגום</button>
         <button id="listenShareBtn" type="button" class="hidden px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm">↗ שתף</button>
+        <button id="listenRetryBtn" type="button" class="hidden px-3 py-2.5 rounded-xl bg-amber-700 hover:bg-amber-600 text-white text-sm font-semibold">🔁 נסה שוב לתמלל</button>
+        <a id="listenDownload" class="hidden px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm" download>⬇ שמור הקלטה</a>
         <button id="listenClearBtn" type="button" class="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm">נקה</button>
       </div>
-      <p class="text-[11px] text-slate-500 leading-relaxed">האודיו לא נשמר, רק הטקסט, בטלפון שלך. זיהוי הדיבור עובר דרך Google ודורש אינטרנט. השאירו את המסך דלוק והאפליקציה פתוחה. לשיחה שאתם חלק ממנה, להדרכה, להכרזות או לשיחה במקום ציבורי. בישראל האזנה לשיחה פרטית של אחרים בלי הסכמה של אחד מהם אסורה (חוק האזנת סתר), ובחו״ל חל החוק המקומי.</p>
+      <p class="text-[11px] text-slate-500 leading-relaxed">בהקלטה שקטה ההקלטה נשלחת בסוף לתמלול בשירות Groq, ובתרגום חי הדיבור עובר דרך Google. שניהם דורשים אינטרנט. בטלפון נשמר רק הטקסט. השאירו את המסך דלוק והאפליקציה פתוחה. לשיחה שאתם חלק ממנה, להדרכה, להכרזות או לשיחה במקום ציבורי. בישראל האזנה לשיחה פרטית של אחרים בלי הסכמה של אחד מהם אסורה (חוק האזנת סתר), ובחו״ל חל החוק המקומי.</p>
     </div>
   </div>
 
@@ -385,6 +391,16 @@
         <p id="emailStatus" class="text-xs min-h-[1rem]" aria-live="polite"></p>
         <p class="text-xs text-slate-400 leading-relaxed">ללא אימייל המכסה החינמית היא כ-5,000 תווים ביום, ועם אימייל כ-50,000. נשמר במכשיר בלבד ונשלח רק לשירות MyMemory.</p>
         <p class="text-xs text-slate-500 leading-relaxed">פרטיות: הטקסט לתרגום נשלח לשירותי התרגום (MyMemory, ובגיבוי Google ו-Lingva), וזיהוי הדיבור עובר דרך Google. ההיסטוריה, המועדפים והמלון נשמרים רק בטלפון.</p>
+      </div>
+
+      <div class="border-t border-slate-800 pt-3 flex flex-col gap-1.5">
+        <label for="optGroqKey" class="text-slate-300">מפתח Groq להקלטה שקטה (חינם)</label>
+        <div class="flex gap-2">
+          <input id="optGroqKey" type="password" dir="ltr" autocomplete="off" spellcheck="false" placeholder="gsk_..." class="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          <button id="saveGroqBtn" type="button" class="shrink-0 min-w-[5.5rem] px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white transition font-semibold">שמור ובדוק</button>
+        </div>
+        <p id="groqStatus" class="text-xs min-h-[1rem]" aria-live="polite"></p>
+        <p class="text-xs text-slate-400 leading-relaxed">יוצרים מפתח בחינם: console.groq.com ← API Keys ← Create API Key, ומדביקים כאן. המפתח נשמר רק בטלפון הזה, ומי שיש לו את הקישור לא יכול להשתמש בו.</p>
       </div>
 
       <div class="border-t border-slate-800 pt-3 flex items-center justify-between gap-3">
@@ -430,14 +446,16 @@
   <!-- כתובת עם גרסה לכל קובץ, כדי שהדפדפן לעולם לא יערבב קובץ ישן עם חדש. נכתב אוטומטית ע"י tools/stamp-sw.py -->
   <script type="importmap">
   { "imports": {
-    "./js/app.js": "./js/app.js?v=c09c260725",
-    "./js/languages.js": "./js/languages.js?v=c09c260725",
-    "./js/phrasebook.js": "./js/phrasebook.js?v=c09c260725",
-    "./js/translate.js": "./js/translate.js?v=c09c260725",
-    "./js/speech.js": "./js/speech.js?v=c09c260725",
-    "./js/ui-strings.js": "./js/ui-strings.js?v=c09c260725"
+    "./js/app.js": "./js/app.js?v=547cc28386",
+    "./js/languages.js": "./js/languages.js?v=547cc28386",
+    "./js/phrasebook.js": "./js/phrasebook.js?v=547cc28386",
+    "./js/translate.js": "./js/translate.js?v=547cc28386",
+    "./js/speech.js": "./js/speech.js?v=547cc28386",
+    "./js/recorder.js": "./js/recorder.js?v=547cc28386",
+    "./js/transcribe.js": "./js/transcribe.js?v=547cc28386",
+    "./js/ui-strings.js": "./js/ui-strings.js?v=547cc28386"
   } }
   </script>
-  <script type="module" src="js/app.js?v=c09c260725"></script>
+  <script type="module" src="js/app.js?v=547cc28386"></script>
 </body>
 </html>

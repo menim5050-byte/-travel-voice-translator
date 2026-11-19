@@ -3,6 +3,8 @@ import { PHRASES, CATEGORY_LABELS, HOTEL_TEMPLATE } from './phrasebook.js';
 import { translate, getEmail, setEmail, clearCache, cacheSize, isLang } from './translate.js';
 import { speak, stopSpeaking, listen, listenLoop, unlockAudio, hasVoice, voicesLoaded, speechSupport, isSpeaking } from './speech.js';
 import { panelBStrings, PANEL_B_UI } from './ui-strings.js';
+import { startRecording, recorderSupported, extFor } from './recorder.js';
+import { transcribe, getGroqKey, setGroqKey, looksLikeGroqKey, testGroqKey, groupSegments } from './transcribe.js';
 const panelBStringsAll = () => PANEL_B_UI;
 
 const $ = id => document.getElementById(id);
@@ -827,18 +829,30 @@ const lEl = {
   durations: $('listenDurations'), target: $('listenTargetInfo'), setup: $('listenSetup'),
   start: $('listenStartBtn'), timer: $('listenTimer'), status: $('listenStatus'),
   rows: $('listenRows'), empty: $('listenEmpty'), interim: $('listenInterim'),
-  copy: $('listenCopyBtn'), share: $('listenShareBtn'), clear: $('listenClearBtn')
+  copy: $('listenCopyBtn'), share: $('listenShareBtn'), clear: $('listenClearBtn'),
+  modes: $('listenModes'), keyHint: $('listenKeyHint'), keyBtn: $('listenKeyBtn'),
+  setupToggle: $('listenSetupToggle'), meter: $('listenMeter'), meterBar: $('listenMeterBar'), retry: $('listenRetryBtn'), download: $('listenDownload')
 };
 const savedSec = Number(loadJSON('tvt_listen_sec', 180));
 const lm = {
   open: false, running: false, stopping: false, handle: null, rows: [], session: 0,
   chain: Promise.resolve(), endAt: 0, tick: null, wake: null, lang: 'en', target: 'he',
-  sec: savedSec >= 5 && savedSec <= 3600 ? savedSec : 180, historyTs: 0
+  sec: savedSec >= 5 && savedSec <= 3600 ? savedSec : 180, historyTs: 0,
+  mode: loadJSON('tvt_listen_mode', 'silent') === 'live' ? 'live' : 'silent', // silent = הקלטה שקטה ותרגום בסוף
+  recorder: null, lastBlob: null, lastLang: 'auto', downloadUrl: null
 };
+const LISTEN_MODES = [
+  { id: 'silent', label: '🔇 הקלטה שקטה', sub: 'בלי צלילים, תרגום בסוף' },
+  { id: 'live', label: '⚡ תרגום חי', sub: 'משפט-משפט, עם צלילי טלפון' }
+];
 const fmtTime = sec => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
 
 function renderListenSetup() {
   if (!lEl.lang.options.length) {
+    const auto = document.createElement('option');
+    auto.value = 'auto';
+    auto.textContent = '🌐 זיהוי אוטומטי';
+    lEl.lang.appendChild(auto);
     for (const [k, L] of Object.entries(LANGUAGES)) {
       const o = document.createElement('option');
       o.value = k;
@@ -846,6 +860,33 @@ function renderListenSetup() {
       lEl.lang.appendChild(o);
     }
   }
+  const autoOpt = lEl.lang.querySelector('option[value="auto"]');
+  autoOpt.disabled = lm.mode === 'live';   // בתרגום חי צריך לבחור שפה
+  if (lm.mode === 'live' && lEl.lang.value === 'auto') lEl.lang.value = el.langB.value;
+  lEl.modes.textContent = '';
+  LISTEN_MODES.forEach(m => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.mode = m.id;
+    b.disabled = lm.running;
+    b.className = 'rounded-xl border px-2 py-2 text-sm flex flex-col items-center gap-0.5 transition ' + (m.id === lm.mode
+      ? 'bg-amber-600 border-amber-500 text-white'
+      : 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700');
+    const t = document.createElement('span'); t.className = 'font-semibold'; t.textContent = m.label;
+    const sub = document.createElement('span'); sub.className = 'text-[11px] opacity-80'; sub.textContent = m.sub;
+    b.appendChild(t); b.appendChild(sub);
+    b.addEventListener('click', () => {
+      if (lm.running) return;
+      lm.mode = m.id;
+      saveJSON('tvt_listen_mode', m.id);
+      if (m.id === 'silent' && !lm.rows.length) lEl.lang.value = 'auto';
+      renderListenSetup();
+      setListenUi();
+      setRecordingTools();
+    });
+    lEl.modes.appendChild(b);
+  });
+  lEl.keyHint.classList.toggle('hidden', !(lm.mode === 'silent' && !getGroqKey()));
   lEl.durations.textContent = '';
   LISTEN_DURATIONS.forEach(sec => {
     const b = document.createElement('button');
@@ -868,17 +909,36 @@ function renderListenSetup() {
   const t = LANGUAGES[el.langA.value];
   lEl.target.textContent = lEl.lang.value === el.langA.value
     ? `השפה זהה לשפה שלך (${t.nameHe}), ולכן יוצג רק הטקסט שזוהה.`
-    : `כל משפט יתורגם ל${t.nameHe} (השפה של דובר א׳) ויופיע מיד.`;
+    : lm.mode === 'silent'
+      ? `בסוף ההקלטה כל השיחה תתומלל ותתורגם ל${t.nameHe}.`
+      : `כל משפט יתורגם ל${t.nameHe} (השפה של דובר א׳) ויופיע מיד.`;
+}
+function setLevel(v) { lEl.meterBar.style.width = `${Math.round(Math.max(0.03, v) * 100)}%`; }
+function setRecordingTools() {
+  const show = lm.mode === 'silent' && !!lm.lastBlob && !lm.running;
+  lEl.download.classList.toggle('hidden', !show);
+  if (show) {
+    if (lm.downloadUrl) URL.revokeObjectURL(lm.downloadUrl);
+    lm.downloadUrl = URL.createObjectURL(lm.lastBlob);
+    lEl.download.href = lm.downloadUrl;
+    const d = new Date();
+    lEl.download.download = `recording-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}.${extFor(lm.lastBlob.type)}`;
+  }
 }
 
 function setListenUi() {
   const busy = lm.running;
-  lEl.start.textContent = lm.stopping ? 'מסיים...' : busy ? '⏹ עצור האזנה' : '🎧 התחל האזנה';
+  const idle = lm.mode === 'silent' ? '🔴 התחל הקלטה' : '🎧 התחל האזנה';
+  lEl.start.textContent = lm.stopping ? 'מסיים...' : busy ? (lm.mode === 'silent' ? '⏹ עצור ותרגם' : '⏹ עצור האזנה') : idle;
+  lEl.modes.querySelectorAll('button').forEach(b => { b.disabled = busy; });
   lEl.start.className = 'flex-1 py-3.5 rounded-xl font-semibold text-base text-white shadow-md transition ' +
     (busy ? 'bg-rose-600 hover:bg-rose-500' + (lm.stopping ? '' : ' mic-listening') : 'bg-amber-600 hover:bg-amber-500');
   lEl.lang.disabled = busy;
   lEl.durations.querySelectorAll('button').forEach(b => { b.disabled = busy; });
-  lEl.setup.classList.toggle('opacity-60', busy);
+  // כשמקליטים או כשיש תוצאות, ההגדרות מתקפלות כדי לפנות מקום לתרגום
+  const collapse = busy || (lm.rows.length > 0 && !lm.setupOpen);
+  lEl.setup.classList.toggle('hidden', collapse);
+  lEl.setupToggle.classList.toggle('hidden', busy || !collapse);
   lEl.clear.disabled = busy;
 }
 
@@ -908,12 +968,19 @@ function renderListenRow(row) {
     main.textContent = row.tr;
   }
   row.el.appendChild(main);
-  if (row.status !== 'same') {
+  if (row.status !== 'same' || row.t != null) {
     const src = document.createElement('p');
     src.className = 'text-xs text-slate-400 leading-relaxed';
+    if (row.t != null) {
+      const tm = document.createElement('span');
+      tm.dir = 'ltr';
+      tm.className = 'inline-block font-mono text-amber-300/80 me-2';
+      tm.textContent = fmtTime(row.t);
+      src.appendChild(tm);
+    }
     src.dir = LANGUAGES[row.lang].dir;
     src.lang = LANGUAGES[row.lang].speechCode;
-    src.textContent = row.src;
+    if (row.status !== 'same') { const body = document.createElement('bdi'); body.textContent = row.src; src.appendChild(body); }
     row.el.appendChild(src);
   }
   if (nearBottom) box.scrollTop = box.scrollHeight;
@@ -971,6 +1038,7 @@ function tickListen() {
 }
 
 function startListening() {
+  if (lm.mode === 'silent') { startSilent(); return; }
   if (!speechSupport.stt) { showBanner(MIC_ERRORS.unsupported, 'warn'); return; }
   unlockAudio();
   stopRecognition();
@@ -979,6 +1047,7 @@ function startListening() {
   lm.target = el.langA.value;
   lm.session++;
   lm.rows = [];
+  lm.setupOpen = false;
   lm.historyTs = 0;
   lm.chain = Promise.resolve();
   renderListenRows();
@@ -1012,8 +1081,128 @@ function startListening() {
   if (!lm.handle) finishListening(session);
 }
 
+
+/* ---------- הקלטה שקטה: מקליטים בלי צלילים, ובסוף מתמללים (Groq) ומתרגמים ---------- */
+async function startSilent() {
+  if (!getGroqKey()) {
+    lEl.status.textContent = 'להקלטה שקטה צריך קודם מפתח Groq בהגדרות (פעם אחת).';
+    lEl.keyHint.classList.remove('hidden');
+    return;
+  }
+  if (!recorderSupported()) { showBanner('הדפדפן הזה לא תומך בהקלטה. אפשר להשתמש ב"תרגום חי".', 'error'); return; }
+  unlockAudio();
+  stopRecognition();
+  stopSpeaking();
+  lm.lang = lEl.lang.value;
+  lm.target = el.langA.value;
+  lm.session++;
+  lm.rows = [];
+  lm.setupOpen = false;
+  lm.historyTs = 0;
+  lm.lastBlob = null;
+  lEl.retry.classList.add('hidden');
+  setRecordingTools();
+  renderListenRows();
+  lm.running = true;
+  lm.stopping = false;
+  setListenUi();
+  lEl.status.textContent = 'מבקש גישה למיקרופון...';
+  const session = lm.session;
+  let recorder;
+  try {
+    recorder = await startRecording({ onLevel: v => { if (session === lm.session) setLevel(v); } });
+  } catch (e) {
+    if (session !== lm.session) return;
+    lm.running = false;
+    setListenUi();
+    const msg = e.code === 'not-allowed' ? MIC_ERRORS['not-allowed'] : e.code === 'unsupported' ? 'הדפדפן הזה לא תומך בהקלטה.' : 'לא ניתן להפעיל את המיקרופון כרגע.';
+    lEl.status.textContent = msg;
+    showBanner(msg, 'error');
+    return;
+  }
+  if (session !== lm.session || !lm.running || lm.stopping) { recorder.cancel(); return; }
+  lm.recorder = recorder;
+  lm.recStart = Date.now();
+  lm.endAt = Date.now() + lm.sec * 1000;
+  keepScreenOn();
+  lm.wake = setInterval(keepScreenOn, 60000);
+  lm.tick = setInterval(tickListen, 250);
+  tickListen();
+  setLevel(0);
+  lEl.meter.classList.remove('hidden');
+  lEl.status.textContent = '🔴 מקליט בשקט... הניחו את הטלפון קרוב לדוברים. התרגום יופיע בסוף.';
+}
+
+async function stopSilent() {
+  if (!lm.running || lm.stopping) return;
+  const session = lm.session;
+  lm.stopping = true;
+  clearInterval(lm.tick);
+  clearInterval(lm.wake);
+  setListenUi();
+  lEl.status.textContent = 'מסיים הקלטה...';
+  const recorder = lm.recorder;
+  lm.recorder = null;
+  const blob = recorder ? await recorder.stop() : null;
+  if (session !== lm.session) return;
+  lm.running = false;
+  lm.stopping = false;
+  lEl.meter.classList.add('hidden');
+  lEl.timer.textContent = fmtTime(lm.sec);
+  setListenUi();
+  if (!blob || blob.size < 1000) { lEl.status.textContent = 'ההקלטה ריקה. לא נקלט קול.'; return; }
+  lm.lastBlob = blob;
+  lm.lastLang = lm.lang;
+  lm.lastDuration = Math.round((Date.now() - (lm.recStart || Date.now())) / 1000);
+  setRecordingTools();
+  await transcribeLast(session);
+}
+
+async function runPool(items, limit, fn) {
+  let i = 0;
+  const worker = async () => { while (i < items.length) { const it = items[i++]; await fn(it); } };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+}
+
+async function transcribeLast(session) {
+  if (!lm.lastBlob) return;
+  lEl.retry.classList.add('hidden');
+  lEl.status.textContent = `שולח לתמלול (${(lm.lastBlob.size / 1048576).toFixed(1)} MB)...`;
+  keepScreenOn();
+  try {
+    const r = await transcribe(lm.lastBlob, { langKey: lm.lastLang, filename: `recording.${extFor(lm.lastBlob.type)}` });
+    if (session !== lm.session) return;
+    const groups = groupSegments(r.segments);
+    if (!groups.length) { lEl.status.textContent = 'לא זוהה דיבור בהקלטה.'; return; }
+    const known = !!r.langKey;
+    lm.rows = groups.map(g => ({
+      src: g.text, tr: known ? '' : g.text, status: known ? 'pending' : 'same', t: g.start,
+      lang: known ? r.langKey : 'en', target: lm.target, session, el: null
+    }));
+    renderListenRows();
+    setListenUi();
+    const langName = known ? LANGUAGES[r.langKey].nameHe : (r.detectedName || 'לא מוכרת');
+    if (known) {
+      lEl.status.textContent = `מתרגם ${groups.length} קטעים מ${langName}...`;
+      await runPool(lm.rows, 3, row => translateListenRow(row));
+      if (session !== lm.session) return;
+    }
+    saveListenToHistory();
+    const failed = lm.rows.filter(x => x.status === 'failed').length;
+    lEl.status.textContent = known
+      ? `✓ הסתיים · הקלטה ${fmtTime(lm.lastDuration || 0)} · ${groups.length} קטעים · שפה: ${langName} · נשמר בהיסטוריה.` + (failed ? ` ${failed} קטעים לא תורגמו (לחצו עליהם לנסות שוב).` : '')
+      : `✓ תומלל · השפה שזוהתה (${langName}) לא נתמכת לתרגום, ולכן מוצג המקור.`;
+  } catch (e) {
+    if (session !== lm.session) return;
+    lEl.status.textContent = e.message || 'התמלול נכשל.';
+    lEl.retry.classList.remove('hidden');
+    if (e.code === 'auth' || e.code === 'no-key') lEl.keyHint.classList.remove('hidden');
+  }
+}
+
 function stopListening() {
   if (!lm.running || lm.stopping) return;
+  if (lm.mode === 'silent' || lm.recorder) { stopSilent(); return; }
   lm.stopping = true;
   clearInterval(lm.tick);
   setListenUi();
@@ -1042,10 +1231,12 @@ async function finishListening(session) {
 function openListen() {
   stopRecognition();
   stopSpeaking();
-  if (!lm.running && !lm.rows.length) lEl.lang.value = el.langB.value;
-  renderListenSetup();
+  renderListenSetup(); // יוצר את רשימת השפות בפעם הראשונה
+  // בהקלטה שקטה ברירת המחדל היא זיהוי אוטומטי, ובתרגום חי השפה של דובר ב׳
+  if (!lm.running && !lm.rows.length) lEl.lang.value = lm.mode === 'silent' ? 'auto' : el.langB.value;
   if (!lEl.lang.value) lEl.lang.value = el.langB.value;
   renderListenSetup();
+  setRecordingTools();
   setListenUi();
   lm.open = true;
   lEl.modal.classList.remove('hidden');
@@ -1066,6 +1257,9 @@ function listenTranslationText(withOriginal) {
 }
 
 lEl.open.addEventListener('click', openListen);
+lEl.setupToggle.addEventListener('click', () => { lm.setupOpen = true; setListenUi(); });
+lEl.retry.addEventListener('click', () => { if (!lm.running) transcribeLast(lm.session); });
+lEl.keyBtn.addEventListener('click', () => { refreshSettingsInfo(); el.settings.showModal(); placeBanner(); try { $('optGroqKey').focus(); } catch { /* ignore */ } });
 lEl.close.addEventListener('click', () => closeListen());
 lEl.start.addEventListener('click', () => { if (lm.running) stopListening(); else startListening(); });
 lEl.lang.addEventListener('change', renderListenSetup);
@@ -1083,11 +1277,14 @@ if (navigator.share) {
   });
 }
 lEl.clear.addEventListener('click', () => {
-  if (lm.running || !lm.rows.length) return;
+  if (lm.running || (!lm.rows.length && !lm.lastBlob)) return;
   if (!window.confirm('לנקות את התמלול מהמסך? (מה שנשמר בהיסטוריה נשאר)')) return;
   lm.session++;
   lm.rows = [];
   lm.historyTs = 0;
+  lm.lastBlob = null;
+  setRecordingTools();
+  lEl.retry.classList.add('hidden');
   renderListenRows();
   lEl.status.textContent = '';
 });
@@ -1162,7 +1359,24 @@ async function refreshOfflineInfo() {
   } catch { /* ignore */ }
 }
 
+const gEl = { input: $('optGroqKey'), save: $('saveGroqBtn'), status: $('groqStatus') };
+function setGroqStatus(cls, msg) { gEl.status.className = `text-xs min-h-[1rem] ${cls}`; gEl.status.textContent = msg; }
+async function saveGroq() {
+  const v = gEl.input.value.trim();
+  if (!v) { setGroqKey(''); setGroqStatus('text-slate-400', 'לא מוגדר מפתח. הקלטה שקטה לא תהיה זמינה.'); renderListenSetup(); return; }
+  if (!looksLikeGroqKey(v)) { setGroqStatus('text-amber-300', 'זה לא נראה כמו מפתח Groq (מתחיל ב-gsk_). בדוק שהעתקת את כולו.'); return; }
+  setGroqKey(v);
+  renderListenSetup();
+  setGroqStatus('text-slate-400', 'נשמר. בודק שהמפתח עובד...');
+  try { await testGroqKey(v); setGroqStatus('text-emerald-400', '✓ המפתח עובד. הקלטה שקטה זמינה.'); }
+  catch (e) { setGroqStatus(e.code === 'auth' ? 'text-rose-300' : 'text-amber-300', e.message); }
+}
+gEl.save.addEventListener('click', saveGroq);
+gEl.input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveGroq(); } });
+
 function refreshSettingsInfo() {
+  gEl.input.value = getGroqKey();
+  if (getGroqKey()) setGroqStatus('text-emerald-400', 'מפתח שמור ✓'); else setGroqStatus('text-slate-400', 'לא מוגדר מפתח.');
   el.optEmail.value = getEmail(); // מציגים את מה שבאמת שמור, לא טקסט שהוקלד ולא נשמר
   setEmailStatus(getEmail() ? 'saved' : 'none');
   renderVoices();

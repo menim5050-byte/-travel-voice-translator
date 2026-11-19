@@ -256,6 +256,8 @@ with sync_playwright() as p:
     # 21. מצב האזנה: שיחה ברומנית לזמן קצוב, תרגום חי לעברית, סיכום
     page.click('#listenOpenBtn'); page.wait_for_timeout(150)
     ok('listen mode opens', page.is_visible('#listenModal') and page.locator('#listenDurations button').count() == 5)
+    page.click('#listenModes button[data-mode="live"]')
+    ok('live mode: auto-detect not offered', page.evaluate("document.querySelector('#listenLang option[value=auto]').disabled") and page.input_value('#listenLang') != 'auto')
     page.select_option('#listenLang', 'ro')
     page.evaluate("document.querySelector('#listenDurations button').dataset.sec='6'")
     page.click('#listenDurations button >> nth=0')
@@ -277,6 +279,7 @@ with sync_playwright() as p:
     first = page.locator('#historyList > div >> nth=0').inner_text()
     ok('listen: whole conversation saved in history', '🎧 האזנה' in first and 'MM:Unde este gara centrală' in first, first[:80].replace('\n', ' | '))
     page.click('#listenOpenBtn'); page.wait_for_timeout(100)
+    ok('listen: remembers live mode', 'תרגום חי' in page.inner_text('#listenModes button.bg-amber-600'))
     tap('#listenStartBtn'); page.wait_for_timeout(150)
     page.evaluate("window.__interim('Mulțumesc mult pentru tot')"); page.wait_for_timeout(300)
     tap('#listenStartBtn')
@@ -287,6 +290,89 @@ with sync_playwright() as p:
     reset()
     ok('no JS errors (main page)', not errs, str(errs))
     ctx.close()
+
+    # 22. הקלטה שקטה: מיקרופון מדומה + Groq מדומה
+    MEDIA = """(() => {
+      const stream = { getTracks: () => [{ stop() { window.__micStopped = true; } }] };
+      navigator.mediaDevices.getUserMedia = async () => {
+        if (window.__micDenied) { const e = new Error('denied'); e.name = 'NotAllowedError'; throw e; }
+        window.__micStopped = false; return stream; };
+      window.MediaRecorder = function () {
+        this.state = 'inactive'; this.mimeType = 'audio/webm;codecs=opus';
+        this.start = () => { this.state = 'recording'; this._t = setInterval(() => this.ondataavailable && this.ondataavailable({ data: new Blob([new Uint8Array(4000)], { type: 'audio/webm' }) }), 200); };
+        this.stop = () => { clearInterval(this._t); this.state = 'inactive'; setTimeout(() => { this.ondataavailable && this.ondataavailable({ data: new Blob([new Uint8Array(2000)]) }); this.onstop && this.onstop(); }, 20); };
+      };
+      window.MediaRecorder.isTypeSupported = m => m.startsWith('audio/webm');
+      window.AudioContext = function () {
+        this.createMediaStreamSource = () => ({ connect() {} });
+        this.createAnalyser = () => ({ fftSize: 512, getByteTimeDomainData(b) { for (let i = 0; i < b.length; i++) b[i] = 128 + Math.round(Math.sin(i) * 40); } });
+        this.close = () => {};
+      };
+    })();"""
+    groq = {'mode': 'ok', 'calls': []}
+    SEGS = {'language': 'romanian', 'duration': 12.0, 'text': 'x', 'segments': [
+        {'start': 0.0, 'end': 2.5, 'text': ' Bună ziua, bine ați venit la castel.'},
+        {'start': 6.0, 'end': 8.0, 'text': ' Turul durează aproximativ o oră.'}]}
+    def groq_route(route):
+        u = route.request.url
+        auth = route.request.headers.get('authorization', '')
+        if u.endswith('/models'):
+            route.fulfill(status=200 if auth.endswith('a' * 40) else 401, headers=CORS, body=json.dumps({'data': []}))
+            return
+        groq['calls'].append((auth, route.request.post_data_buffer or b''))
+        if groq['mode'] == '429':
+            route.fulfill(status=429, headers=CORS, body=json.dumps({'error': {'message': 'Rate limit reached'}})); return
+        route.fulfill(status=200, headers=CORS, body=json.dumps(SEGS))
+    ctx4, page4, errs4 = new_page(b, MEDIA)
+    page4.route('https://api.groq.com/**', groq_route)
+    tap4 = lambda sel: page4.evaluate(f"document.querySelector('{sel}').click()")
+    page4.click('#listenOpenBtn'); page4.wait_for_timeout(150)
+    ok('silent mode is the default, auto-detect language', 'הקלטה שקטה' in page4.inner_text('#listenModes button.bg-amber-600') and page4.input_value('#listenLang') == 'auto')
+    ok('silent mode without key: hint shown', page4.is_visible('#listenKeyHint'))
+    page4.click('#listenKeyBtn'); page4.wait_for_selector('#settings[open]')
+    page4.fill('#optGroqKey', 'not-a-key'); page4.click('#saveGroqBtn'); page4.wait_for_timeout(100)
+    ok('key format checked', 'gsk_' in page4.inner_text('#groqStatus'))
+    page4.fill('#optGroqKey', 'gsk_' + 'b' * 40); page4.click('#saveGroqBtn'); page4.wait_for_timeout(400)
+    ok('wrong key reported', 'לא תקין' in page4.inner_text('#groqStatus'), page4.inner_text('#groqStatus'))
+    page4.fill('#optGroqKey', 'gsk_' + 'a' * 40); page4.click('#saveGroqBtn')
+    page4.wait_for_function("document.getElementById('groqStatus').textContent.includes('עובד')", timeout=3000)
+    ok('valid key saved and tested', True)
+    page4.click('#closeSettings'); page4.wait_for_timeout(100)
+    ok('key hint gone after saving', not page4.is_visible('#listenKeyHint'))
+    page4.evaluate("document.querySelector('#listenDurations button').dataset.sec='2'")
+    page4.click('#listenDurations button >> nth=0')
+    tap4('#listenStartBtn'); page4.wait_for_timeout(500)
+    ok('silent: recording with level meter, no speech recognizer used', page4.is_visible('#listenMeter') and 'מקליט בשקט' in page4.inner_text('#listenStatus') and page4.evaluate('window.__recs.length') == 0)
+    page4.wait_for_function("document.getElementById('listenStatus').textContent.includes('הסתיים')", timeout=10000)
+    rows = page4.inner_text('#listenRows')
+    ok('silent: stops by itself, transcribed and translated to Hebrew', 'MM:Bună ziua, bine ați venit la castel. Turul durează aproximativ o oră.' in rows or ('MM:' in rows and 'Turul' in rows), rows[:160].replace('\n', ' | '))
+    ok('silent: times shown, language detected', '0:00' in rows and 'רומנית' in page4.inner_text('#listenStatus'), page4.inner_text('#listenStatus'))
+    auth, body = groq['calls'][-1]
+    ok('silent: one upload with the user key, Whisper model, auto language', auth == 'Bearer gsk_' + 'a' * 40 and b'whisper-large-v3-turbo' in body and b'name="language"' not in body and len(groq['calls']) == 1)
+    ok('silent: microphone released', page4.evaluate('window.__micStopped') is True)
+    ok('silent: recording can be saved', page4.is_visible('#listenDownload') and page4.get_attribute('#listenDownload', 'href').startswith('blob:'))
+    # מגבלת שימוש, ואז ניסיון חוזר מצליח בלי להקליט שוב
+    groq['mode'] = '429'
+    ok('silent: settings fold away to make room for results', not page4.is_visible('#listenSetup') and page4.is_visible('#listenSetupToggle'))
+    page4.click('#listenSetupToggle')
+    page4.select_option('#listenLang', 'ro')
+    tap4('#listenStartBtn'); page4.wait_for_timeout(400); tap4('#listenStartBtn')
+    page4.wait_for_function("document.getElementById('listenStatus').textContent.includes('מגבלת')", timeout=6000)
+    ok('silent: limit reached -> clear message and retry button', page4.is_visible('#listenRetryBtn'))
+    auth, body = groq['calls'][-1]
+    ok('silent: chosen language sent to Whisper', b'name="language"' in body and b'ro' in body)
+    groq['mode'] = 'ok'
+    page4.click('#listenRetryBtn')
+    page4.wait_for_function("document.getElementById('listenStatus').textContent.includes('הסתיים')", timeout=6000)
+    ok('silent: retry transcribes the same recording', 'Turul' in page4.inner_text('#listenRows') and not page4.is_visible('#listenRetryBtn'))
+    page4.evaluate('window.__micDenied = true')
+    tap4('#listenStartBtn'); page4.wait_for_timeout(300)
+    ok('silent: blocked microphone -> clear message', 'נחסמה' in page4.inner_text('#listenStatus'), page4.inner_text('#listenStatus'))
+    page4.keyboard.press('Escape'); page4.wait_for_timeout(150)
+    first = page4.locator('#historyList > div >> nth=0').inner_text()
+    ok('silent: conversation saved in history', '🎧 האזנה' in first and 'Turul' in first)
+    ok('no JS errors (silent recording)', not errs4, str(errs4))
+    ctx4.close()
 
     # 18. אחסון פגום לא מפיל את האפליקציה
     bad = """try{localStorage.setItem('tvt_cache_v2','null');localStorage.setItem('tvt_langA','__proto__');
