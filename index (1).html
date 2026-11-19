@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>מתורגמן קולי דו-כיווני | עברית · אנגלית · רומנית · ערבית · תאילנדית</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    body {
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    @keyframes pulseRing {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55); }
+      70% { transform: scale(1); box-shadow: 0 0 0 14px rgba(239, 68, 68, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+    .mic-listening {
+      animation: pulseRing 1.4s infinite;
+    }
+    .face-to-face-flip {
+      transform: rotate(180deg);
+    }
+    .transition-flip {
+      transition: transform 0.35s ease;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
+
+  <!-- Top Header -->
+  <header class="bg-slate-900/90 border-b border-slate-800 sticky top-0 z-20 backdrop-blur">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-2.5">
+        <span class="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-indigo-600 text-white text-lg shadow-sm" aria-hidden="true">🎙️</span>
+        <div>
+          <h1 class="text-base sm:text-lg font-bold text-white leading-tight">מתורגמן קולי לשיחה בין 2 אנשים</h1>
+          <p class="text-xs text-slate-400">עברית · אנגלית · רומנית · ערבית · תאילנדית</p>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <label class="inline-flex items-center gap-2 text-xs sm:text-sm bg-slate-800 hover:bg-slate-700/80 px-3 py-1.5 rounded-lg cursor-pointer select-none border border-slate-700">
+          <input id="autoSpeakToggle" type="checkbox" checked class="accent-indigo-500 w-4 h-4 rounded" />
+          <span>הקראה אוטומטית</span>
+        </label>
+
+        <button id="flipModeBtn" type="button" class="inline-flex items-center gap-1.5 text-xs sm:text-sm bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-700 transition">
+          <span aria-hidden="true">🔄</span>
+          <span id="flipModeLabel">מצב פנים-אל-פנים: כבוי</span>
+        </button>
+
+        <button id="testAudioBtn" type="button" class="inline-flex items-center gap-1.5 text-xs sm:text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition">
+          <span aria-hidden="true">🔊</span>
+          <span>בדיקת שמע</span>
+        </button>
+
+        <button id="swapLangsBtn" type="button" class="inline-flex items-center gap-1.5 text-xs sm:text-sm bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 px-3 py-1.5 rounded-lg border border-indigo-500/40 transition">
+          <span aria-hidden="true">⇄</span>
+          <span>החלף שפות</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Browser Compatibility / Status Toast -->
+  <div id="statusBanner" class="hidden max-w-6xl w-full mx-auto px-4 pt-3">
+    <div id="statusBannerBox" class="rounded-xl px-4 py-2.5 text-xs sm:text-sm flex items-center justify-between gap-3 border">
+      <span id="statusBannerText"></span>
+      <button id="dismissBannerBtn" type="button" class="text-xs underline opacity-80 hover:opacity-100 shrink-0">סגור</button>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <main class="max-w-6xl w-full mx-auto px-4 py-4 flex-1 flex flex-col gap-4">
+
+    <!-- 2-Step Turn Switcher -->
+    <section class="bg-slate-900 border border-slate-800 rounded-2xl p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3 shadow-md">
+      <div class="flex items-center gap-2 flex-wrap">
+        <button id="turnStep1Btn" type="button" class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-sky-600 text-white shadow transition">
+          שלב 1: אני מדבר (דובר א׳)
+        </button>
+        <button id="turnStep2Btn" type="button" class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 transition">
+          שלב 2: הצד השני עונה (דובר ב׳)
+        </button>
+      </div>
+      <div class="flex items-center gap-3 flex-wrap">
+        <label class="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+          <input id="autoTranslateOnStop" type="checkbox" class="accent-indigo-500 w-4 h-4 rounded" />
+          <span>תרגם מיד בסיום דיבור (בלי לחכות ללחיצה)</span>
+        </label>
+        <button id="switchTurnBtn" type="button" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow transition">
+          <span aria-hidden="true">⇄</span>
+          <span>החלף מצב לתור הבא</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Two Speaker Panels -->
+    <section class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+      <!-- Speaker A -->
+      <article id="panelA" class="bg-slate-900 border-2 border-sky-500/80 rounded-2xl p-4 sm:p-5 flex flex-col gap-3.5 shadow-lg transition">
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded-full bg-sky-400"></span>
+            <h2 class="font-semibold text-base text-white">דובר א׳</h2>
+          </div>
+          <select id="langA" aria-label="שפת דובר א׳" class="bg-slate-800 border border-slate-700 text-slate-100 text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sky-500">
+            <option value="he" selected>🇮🇱 עברית (עברית)</option>
+            <option value="en">🇬🇧 אנגלית (English)</option>
+            <option value="ro">🇷🇴 רומנית (Română)</option>
+            <option value="ar">🇸🇦 ערבית (العربية)</option>
+            <option value="th">🇹🇭 תאילנדית (ไทย)</option>
+          </select>
+        </div>
+
+        <!-- Mic & Status -->
+        <div class="flex items-center gap-3">
+          <button id="micBtnA" type="button" class="flex-1 flex items-center justify-center gap-2.5 py-3.5 px-4 rounded-xl font-semibold text-sm sm:text-base bg-sky-600 hover:bg-sky-500 active:scale-[0.99] text-white transition shadow-md">
+            <span id="micIconA" aria-hidden="true">🎤</span>
+            <span id="micLabelA">לחץ לדיבור (דובר א׳)</span>
+          </button>
+          <button id="speakOutBtnA" type="button" title="השמע תרגום אחרון" class="p-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition" aria-label="השמע תרגום אחרון עבור דובר א׳">
+            🔊
+          </button>
+        </div>
+
+        <!-- Text Input Fallback / Edit -->
+        <div class="flex flex-col gap-2">
+          <div class="flex gap-2">
+            <textarea id="inputA" rows="2" placeholder="הדיבור יופיע כאן, או הקלד טקסט לתרגום..." class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 resize-none"></textarea>
+            <button id="sendBtnA" type="button" class="px-4 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold text-sm shrink-0 transition shadow">
+              🔊 תרגם והשמע
+            </button>
+          </div>
+          <p id="interimA" class="text-xs text-sky-400 min-h-[1rem]"></p>
+        </div>
+
+        <!-- Latest Translation Result for Speaker A -> B -->
+        <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 flex flex-col gap-1.5 min-h-[5.5rem]">
+          <div class="flex items-center justify-between text-xs text-slate-400">
+            <span id="targetTagA">תרגום עבור דובר ב׳:</span>
+            <button id="copyBtnA" type="button" class="hover:text-white transition">העתק</button>
+          </div>
+          <p id="outputA" class="text-base sm:text-lg font-medium text-emerald-300 leading-relaxed break-words">ממתין לדיבור או טקסט...</p>
+        </div>
+      </article>
+
+      <!-- Speaker B -->
+      <article id="panelB" class="bg-slate-900 border border-slate-800 opacity-85 rounded-2xl p-4 sm:p-5 flex flex-col gap-3.5 shadow-lg transition-flip transition">
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded-full bg-emerald-400"></span>
+            <h2 class="font-semibold text-base text-white">דובר ב׳</h2>
+          </div>
+          <select id="langB" aria-label="שפת דובר ב׳" class="bg-slate-800 border border-slate-700 text-slate-100 text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+            <option value="he">🇮🇱 עברית (עברית)</option>
+            <option value="en" selected>🇬🇧 אנגלית (English)</option>
+            <option value="ro">🇷🇴 רומנית (Română)</option>
+            <option value="ar">🇸🇦 ערבית (العربية)</option>
+            <option value="th">🇹🇭 תאילנדית (ไทย)</option>
+          </select>
+        </div>
+
+        <!-- Mic & Status -->
+        <div class="flex items-center gap-3">
+          <button id="micBtnB" type="button" class="flex-1 flex items-center justify-center gap-2.5 py-3.5 px-4 rounded-xl font-semibold text-sm sm:text-base bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white transition shadow-md">
+            <span id="micIconB" aria-hidden="true">🎤</span>
+            <span id="micLabelB">לחץ לדיבור (דובר ב׳)</span>
+          </button>
+          <button id="speakOutBtnB" type="button" title="השמע תרגום אחרון" class="p-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition" aria-label="השמע תרגום אחרון עבור דובר ב׳">
+            🔊
+          </button>
+        </div>
+
+        <!-- Text Input Fallback / Edit -->
+        <div class="flex flex-col gap-2">
+          <div class="flex gap-2">
+            <textarea id="inputB" rows="2" placeholder="הדיבור יופיע כאן, או הקלד טקסט לתרגום..." class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"></textarea>
+            <button id="sendBtnB" type="button" class="px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm shrink-0 transition shadow">
+              🔊 תרגם והשמע
+            </button>
+          </div>
+          <p id="interimB" class="text-xs text-emerald-400 min-h-[1rem]"></p>
+        </div>
+
+        <!-- Latest Translation Result for Speaker B -> A -->
+        <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 flex flex-col gap-1.5 min-h-[5.5rem]">
+          <div class="flex items-center justify-between text-xs text-slate-400">
+            <span id="targetTagB">תרגום עבור דובר א׳:</span>
+            <button id="copyBtnB" type="button" class="hover:text-white transition">העתק</button>
+          </div>
+          <p id="outputB" class="text-base sm:text-lg font-medium text-sky-300 leading-relaxed break-words">ממתין לדיבור או טקסט...</p>
+        </div>
+      </article>
+
+    </section>
+
+    <!-- Quick Phrases Bar -->
+    <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <h3 class="text-sm font-semibold text-slate-200">משפטים מהירים (לחיצה תתרגם ותקריא מיד)</h3>
+        <div class="flex items-center gap-2 text-xs text-slate-400">
+          <span>שלח בתור:</span>
+          <button id="phraseActorA" type="button" class="px-2.5 py-1 rounded-lg bg-sky-600 text-white font-medium">דובר א׳</button>
+          <button id="phraseActorB" type="button" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700">דובר ב׳</button>
+        </div>
+      </div>
+      <div id="quickPhrasesGrid" class="flex flex-wrap gap-2"></div>
+    </section>
+
+    <!-- Conversation History -->
+    <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex-1 flex flex-col gap-3">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-semibold text-slate-200">היסטוריית שיחה</h3>
+        <button id="clearHistoryBtn" type="button" class="text-xs text-slate-400 hover:text-rose-400 transition">נקה היסטוריה</button>
+      </div>
+      <div id="historyList" class="flex flex-col gap-2.5 max-h-72 overflow-y-auto pr-1">
+        <p id="emptyHistoryMsg" class="text-xs text-slate-500 text-center py-6">עדיין אין הודעות בשיחה. לחץ על המיקרופון או בחר משפט מהיר כדי להתחיל.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    (function () {
+      'use strict';
+
+      const LANGUAGES = {
+        he: { nameHe: 'עברית', native: 'עברית', speechCode: 'he-IL', ttsCode: 'he-IL', dir: 'rtl' },
+        en: { nameHe: 'אנגלית', native: 'English', speechCode: 'en-US', ttsCode: 'en-US', dir: 'ltr' },
+        ro: { nameHe: 'רומנית', native: 'Română', speechCode: 'ro-RO', ttsCode: 'ro-RO', dir: 'ltr' },
+        ar: { nameHe: 'ערבית', native: 'العربية', speechCode: 'ar-SA', ttsCode: 'ar-SA', dir: 'rtl' },
+        th: { nameHe: 'תאילנדית', native: 'ไทย', speechCode: 'th-TH', ttsCode: 'th-TH', dir: 'ltr' }
+      };
+
+      const QUICK_PHRASES = [
+        { label: 'שלום', he: 'שלום', en: 'Hello', ro: 'Bună ziua', ar: 'مرحبا', th: 'สวัสดี' },
+        { label: 'תודה רבה', he: 'תודה רבה', en: 'Thank you very much', ro: 'Mulțumesc mult', ar: 'شكراً جزيلاً', th: 'ขอบคุณมาก' },
+        { label: 'כן', he: 'כן', en: 'Yes', ro: 'Da', ar: 'نعم', th: 'ใช่' },
+        { label: 'לא', he: 'לא', en: 'No', ro: 'Nu', ar: 'لا', th: 'ไม่' },
+        { label: 'כמה זה עולה?', he: 'כמה זה עולה?', en: 'How much does this cost?', ro: 'Cât costă?', ar: 'كم يكلف هذا؟', th: 'ราคาเท่าไหร่' },
+        { label: 'איפה תחנת הרכבת?', he: 'איפה תחנת הרכבת?', en: 'Where is the train station?', ro: 'Unde este gara?', ar: 'أين محطة القطار؟', th: 'สถานีรถไฟอยู่ที่ไหน' },
+        { label: 'איפה השירותים?', he: 'איפה השירותים?', en: 'Where is the restroom?', ro: 'Unde este toaleta?', ar: 'أين الحمام؟', th: 'ห้องน้ำอยู่ที่ไหน' },
+        { label: 'אפשר חשבון בבקשה?', he: 'אפשר חשבון בבקשה?', en: 'Can I have the bill, please?', ro: 'Nota de plată, vă rog?', ar: 'الحساب من فضلك؟', th: 'ขอเช็คบิลด้วยครับ' },
+        { label: 'בבקשה חכה רגע', he: 'בבקשה חכה רגע', en: 'Please wait a moment', ro: 'Vă rog să așteptați un moment', ar: 'من فضلك انتظر لحظة', th: 'กรุณารอสักครู่' },
+        { label: 'לא הבנתי, אפשר שוב?', he: 'לא הבנתי, אפשר שוב?', en: 'I did not understand, can you repeat?', ro: 'Nu am înțeles, puteți repeta?', ar: 'لم أفهم، هل يمكنك الإعادة؟', th: 'ฉันไม่เข้าใจ ช่วยพูดอีกครั้งได้ไหม' },
+        { label: 'צריך עזרה', he: 'אני צריך עזרה בבקשה', en: 'I need help, please', ro: 'Am nevoie de ajutor, vă rog', ar: 'أحتاج إلى مساعدة من فضلك', th: 'ขอความช่วยเหลือหน่อยครับ' },
+        { label: 'הכל בסדר', he: 'הכל בסדר', en: 'Everything is fine', ro: 'Totul este în regulă', ar: 'كل شيء على ما يرام', th: 'ทุกอย่างเรียบร้อยดี' }
+      ];
+
+      const state = {
+        activeMic: null, // 'A' | 'B' | null
+        recognition: null,
+        activeTurn: 'A',
+        phraseActor: 'A',
+        faceToFace: false,
+        lastSourceText: { A: '', B: '' },
+        lastSourceLang: { A: '', B: '' },
+        lastTranslated: { A: '', B: '' },
+        lastTargetLang: { A: 'en', B: 'he' },
+        history: []
+      };
+
+      // DOM elements
+      const el = {
+        langA: document.getElementById('langA'),
+        langB: document.getElementById('langB'),
+        micBtnA: document.getElementById('micBtnA'),
+        micBtnB: document.getElementById('micBtnB'),
+        micLabelA: document.getElementById('micLabelA'),
+        micLabelB: document.getElementById('micLabelB'),
+        inputA: document.getElementById('inputA'),
+        inputB: document.getElementById('inputB'),
+        sendBtnA: document.getElementById('sendBtnA'),
+        sendBtnB: document.getElementById('sendBtnB'),
+        interimA: document.getElementById('interimA'),
+        interimB: document.getElementById('interimB'),
+        outputA: document.getElementById('outputA'),
+        outputB: document.getElementById('outputB'),
+        targetTagA: document.getElementById('targetTagA'),
+        targetTagB: document.getElementById('targetTagB'),
+        speakOutBtnA: document.getElementById('speakOutBtnA'),
+        speakOutBtnB: document.getElementById('speakOutBtnB'),
+        copyBtnA: document.getElementById('copyBtnA'),
+        copyBtnB: document.getElementById('copyBtnB'),
+        autoSpeakToggle: document.getElementById('autoSpeakToggle'),
+        flipModeBtn: document.getElementById('flipModeBtn'),
+        flipModeLabel: document.getElementById('flipModeLabel'),
+        panelA: document.getElementById('panelA'),
+        panelB: document.getElementById('panelB'),
+        turnStep1Btn: document.getElementById('turnStep1Btn'),
+        turnStep2Btn: document.getElementById('turnStep2Btn'),
+        switchTurnBtn: document.getElementById('switchTurnBtn'),
+        autoTranslateOnStop: document.getElementById('autoTranslateOnStop'),
+        testAudioBtn: document.getElementById('testAudioBtn'),
+        swapLangsBtn: document.getElementById('swapLangsBtn'),
+        statusBanner: document.getElementById('statusBanner'),
+        statusBannerBox: document.getElementById('statusBannerBox'),
+        statusBannerText: document.getElementById('statusBannerText'),
+        dismissBannerBtn: document.getElementById('dismissBannerBtn'),
+        quickPhrasesGrid: document.getElementById('quickPhrasesGrid'),
+        phraseActorA: document.getElementById('phraseActorA'),
+        phraseActorB: document.getElementById('phraseActorB'),
+        historyList: document.getElementById('historyList'),
+        emptyHistoryMsg: document.getElementById('emptyHistoryMsg'),
+        clearHistoryBtn: document.getElementById('clearHistoryBtn')
+      };
+
+      const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+
+      function showBanner(message, type) {
+        el.statusBanner.classList.remove('hidden');
+        el.statusBannerText.textContent = message;
+        el.statusBannerBox.className = 'rounded-xl px-4 py-2.5 text-xs sm:text-sm flex items-center justify-between gap-3 border ';
+        if (type === 'error') {
+          el.statusBannerBox.className += 'bg-rose-950/80 border-rose-700 text-rose-200';
+        } else if (type === 'warn') {
+          el.statusBannerBox.className += 'bg-amber-950/80 border-amber-700 text-amber-200';
+        } else {
+          el.statusBannerBox.className += 'bg-indigo-950/80 border-indigo-700 text-indigo-200';
+        }
+      }
+
+      function hideBanner() {
+        el.statusBanner.classList.add('hidden');
+      }
+
+      function updateDirectionsAndTags() {
+        const langA = LANGUAGES[el.langA.value];
+        const langB = LANGUAGES[el.langB.value];
+        el.inputA.dir = langA.dir;
+        el.inputB.dir = langB.dir;
+        el.outputA.dir = langB.dir;
+        el.outputB.dir = langA.dir;
+        el.targetTagA.textContent = `תרגום עבור דובר ב׳ (${langB.nameHe}):`;
+        el.targetTagB.textContent = `תרגום עבור דובר א׳ (${langA.nameHe}):`;
+      }
+
+      // Speech Synthesis (TTS)
+      let speechUnlocked = false;
+      function unlockSpeech() {
+        if (speechUnlocked || !('speechSynthesis' in window)) return;
+        try {
+          const silent = new SpeechSynthesisUtterance('');
+          silent.volume = 0;
+          window.speechSynthesis.speak(silent);
+          window.speechSynthesis.resume();
+          speechUnlocked = true;
+        } catch (_) {}
+      }
+
+      function speakText(text, langKey) {
+        if (!text) return;
+        if (!('speechSynthesis' in window)) {
+          showBanner('הדפדפן אינו תומך בהקראה קולית (SpeechSynthesis).', 'warn');
+          return;
+        }
+        try {
+          const synth = window.speechSynthesis;
+          const langCfg = LANGUAGES[langKey] || LANGUAGES.en;
+
+          const doSpeak = () => {
+            const utterance = new SpeechSynthesisUtterance(text);
+            window.__activeUtterance = utterance; // prevent Chrome GC bug
+            utterance.lang = langCfg.ttsCode;
+            utterance.rate = 0.96;
+            utterance.volume = 1;
+
+            const voices = synth.getVoices();
+            if (voices && voices.length > 0) {
+              const exact = voices.find(v => v.lang.toLowerCase() === langCfg.ttsCode.toLowerCase());
+              const prefix = voices.find(v => v.lang.toLowerCase().startsWith(langKey.toLowerCase()));
+              if (exact || prefix) {
+                utterance.voice = exact || prefix;
+              }
+            }
+
+            utterance.onerror = (ev) => {
+              if (ev.error && ev.error !== 'interrupted' && ev.error !== 'canceled') {
+                showBanner(`ההקראה הקולית נחסמה או שאין קול מותקן עבור ${langCfg.nameHe} במכשיר זה (${ev.error}).`, 'warn');
+              }
+            };
+
+            synth.resume();
+            synth.speak(utterance);
+          };
+
+          if (synth.speaking || synth.pending) {
+            synth.cancel();
+            setTimeout(doSpeak, 70);
+          } else {
+            doSpeak();
+          }
+        } catch (err) {
+          showBanner('לא ניתן להקריא קולית בדפדפן זה, אך התרגום הטקסטואלי זמין.', 'warn');
+        }
+      }
+
+      // Translation API with multi-provider HTTPS fallback
+      function decodeHtmlEntities(str) {
+        const txt = document.createElement('textarea');
+        txt.innerHTML = str;
+        return txt.value;
+      }
+
+      async function translateWithMyMemory(text, sourceLang, targetLang, signal) {
+        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${encodeURIComponent(sourceLang)}|${encodeURIComponent(targetLang)}`;
+        const res = await fetch(url, { signal });
+        if (!res.ok) throw new Error(`MyMemory HTTP ${res.status}`);
+        const data = await res.json();
+        if (data && data.responseData && data.responseData.translatedText) {
+          const translated = decodeHtmlEntities(data.responseData.translatedText);
+          if (data.responseStatus === 429 || translated.toUpperCase().includes('MYMEMORY WARNING')) {
+            throw new Error('MyMemory rate limit');
+          }
+          return translated;
+        }
+        throw new Error('Invalid MyMemory payload');
+      }
+
+      async function translateWithLingva(text, sourceLang, targetLang, signal) {
+        const url = `https://lingva.ml/api/v1/${encodeURIComponent(sourceLang)}/${encodeURIComponent(targetLang)}/${encodeURIComponent(text)}`;
+        const res = await fetch(url, { signal });
+        if (!res.ok) throw new Error(`Lingva HTTP ${res.status}`);
+        const data = await res.json();
+        if (data && data.translation) {
+          return data.translation;
+        }
+        throw new Error('Invalid Lingva payload');
+      }
+
+      async function translateText(text, sourceLang, targetLang) {
+        const trimmed = text.trim();
+        if (!trimmed) return '';
+        if (sourceLang === targetLang) return trimmed;
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8500);
+
+        try {
+          return await translateWithMyMemory(trimmed, sourceLang, targetLang, controller.signal);
+        } catch (err1) {
+          try {
+            return await translateWithLingva(trimmed, sourceLang, targetLang, controller.signal);
+          } catch (err2) {
+            throw new Error('שירותי התרגום לא זמינים כרגע. בדוק חיבור אינטרנט ונסה שוב.');
+          }
+        } finally {
+          clearTimeout(timeoutId);
+        }
+      }
+
+      function addHistoryEntry(speaker, sourceLang, targetLang, originalText, translatedText) {
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+        state.history.unshift({
+          id: Date.now() + Math.random(),
+          speaker,
+          sourceLang,
+          targetLang,
+          originalText,
+          translatedText,
+          timeStr
+        });
+        if (state.history.length > 40) state.history.pop();
+        renderHistory();
+      }
+
+      function renderHistory() {
+        if (state.history.length === 0) {
+          el.historyList.innerHTML = '';
+          el.historyList.appendChild(el.emptyHistoryMsg);
+          return;
+        }
+
+        el.historyList.innerHTML = '';
+        state.history.forEach(item => {
+          const isA = item.speaker === 'A';
+          const srcCfg = LANGUAGES[item.sourceLang];
+          const tgtCfg = LANGUAGES[item.targetLang];
+
+          const card = document.createElement('div');
+          card.className = 'bg-slate-950/70 border border-slate-800 rounded-xl p-3 flex flex-col gap-1.5';
+
+          const topRow = document.createElement('div');
+          topRow.className = 'flex items-center justify-between text-xs text-slate-400';
+
+          const badge = document.createElement('span');
+          badge.className = isA ? 'text-sky-400 font-semibold' : 'text-emerald-400 font-semibold';
+          badge.textContent = `${isA ? 'דובר א׳' : 'דובר ב׳'} · ${srcCfg.nameHe} ← ${tgtCfg.nameHe} · ${item.timeStr}`;
+
+          const playBtn = document.createElement('button');
+          playBtn.type = 'button';
+          playBtn.className = 'px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 transition';
+          playBtn.textContent = '🔊 השמע';
+          playBtn.addEventListener('click', () => { unlockSpeech(); speakText(item.translatedText, item.targetLang); });
+
+          topRow.appendChild(badge);
+          topRow.appendChild(playBtn);
+
+          const origP = document.createElement('p');
+          origP.className = 'text-xs text-slate-300';
+          origP.dir = srcCfg.dir;
+          origP.textContent = item.originalText;
+
+          const transP = document.createElement('p');
+          transP.className = 'text-sm font-medium text-white';
+          transP.dir = tgtCfg.dir;
+          transP.textContent = item.translatedText;
+
+          card.appendChild(topRow);
+          card.appendChild(origP);
+          card.appendChild(transP);
+          el.historyList.appendChild(card);
+        });
+      }
+
+      async function handleTranslate(speaker, textOverride, forceSpeak) {
+        const isA = speaker === 'A';
+        const inputEl = isA ? el.inputA : el.inputB;
+        const outputEl = isA ? el.outputA : el.outputB;
+        const sourceLang = isA ? el.langA.value : el.langB.value;
+        const targetLang = isA ? el.langB.value : el.langA.value;
+
+        const text = (typeof textOverride === 'string' ? textOverride : inputEl.value).trim();
+        if (!text) return;
+
+        if (typeof textOverride === 'string') {
+          inputEl.value = text;
+        }
+
+        if (
+          state.lastSourceText[speaker] === text &&
+          state.lastSourceLang[speaker] === sourceLang &&
+          state.lastTargetLang[speaker] === targetLang &&
+          state.lastTranslated[speaker]
+        ) {
+          if (forceSpeak || el.autoSpeakToggle.checked) {
+            speakText(state.lastTranslated[speaker], targetLang);
+          }
+          return;
+        }
+
+        outputEl.textContent = 'מתרגם...';
+        try {
+          const translated = await translateText(text, sourceLang, targetLang);
+          outputEl.textContent = translated;
+          state.lastSourceText[speaker] = text;
+          state.lastSourceLang[speaker] = sourceLang;
+          state.lastTranslated[speaker] = translated;
+          state.lastTargetLang[speaker] = targetLang;
+          addHistoryEntry(speaker, sourceLang, targetLang, text, translated);
+
+          if (forceSpeak || el.autoSpeakToggle.checked) {
+            speakText(translated, targetLang);
+          }
+        } catch (err) {
+          outputEl.textContent = 'שגיאה בתרגום.';
+          showBanner(err.message || 'אירעה שגיאה בתרגום.', 'error');
+        }
+      }
+
+      function stopRecognition() {
+        if (state.recognition) {
+          try {
+            state.recognition.stop();
+          } catch (_) {}
+          state.recognition = null;
+        }
+        state.activeMic = null;
+        el.micBtnA.classList.remove('mic-listening', 'bg-rose-600', 'hover:bg-rose-500');
+        el.micBtnA.classList.add('bg-sky-600', 'hover:bg-sky-500');
+        el.micLabelA.textContent = 'לחץ לדיבור (דובר א׳)';
+
+        el.micBtnB.classList.remove('mic-listening', 'bg-rose-600', 'hover:bg-rose-500');
+        el.micBtnB.classList.add('bg-emerald-600', 'hover:bg-emerald-500');
+        el.micLabelB.textContent = 'לחץ לדיבור (דובר ב׳)';
+      }
+
+      function toggleMic(speaker) {
+        if (!SpeechRecognitionAPI) {
+          showBanner('זיהוי דיבור אינו נתמך בדפדפן זה. ניתן להקליד טקסט או להשתמש במשפטים המהירים, והמערכת תתרגם ותקריא.', 'warn');
+          return;
+        }
+
+        if (state.activeMic === speaker) {
+          stopRecognition();
+          return;
+        }
+
+        stopRecognition();
+
+        const isA = speaker === 'A';
+        const langKey = isA ? el.langA.value : el.langB.value;
+        const inputEl = isA ? el.inputA : el.inputB;
+        const interimEl = isA ? el.interimA : el.interimB;
+        const micBtn = isA ? el.micBtnA : el.micBtnB;
+        const micLabel = isA ? el.micLabelA : el.micLabelB;
+
+        const recognition = new SpeechRecognitionAPI();
+        recognition.lang = LANGUAGES[langKey].speechCode;
+        recognition.interimResults = true;
+        recognition.continuous = false;
+        recognition.maxAlternatives = 1;
+
+        state.recognition = recognition;
+        state.activeMic = speaker;
+
+        micBtn.classList.remove('bg-sky-600', 'hover:bg-sky-500', 'bg-emerald-600', 'hover:bg-emerald-500');
+        micBtn.classList.add('mic-listening', 'bg-rose-600', 'hover:bg-rose-500');
+        micLabel.textContent = 'מאזין... (לחץ לעצירה)';
+        interimEl.textContent = 'מאזין לדיבור...';
+
+        let finalTranscript = '';
+        let lastInterim = '';
+
+        recognition.onresult = (event) => {
+          let interimTranscript = '';
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              finalTranscript += transcript + ' ';
+            } else {
+              interimTranscript += transcript;
+            }
+          }
+          lastInterim = interimTranscript;
+          if (interimTranscript) {
+            interimEl.textContent = interimTranscript;
+            if (!finalTranscript.trim()) {
+              inputEl.value = interimTranscript;
+            }
+          }
+          if (finalTranscript.trim()) {
+            inputEl.value = finalTranscript.trim();
+            interimEl.textContent = '';
+          }
+        };
+
+        recognition.onerror = (event) => {
+          interimEl.textContent = '';
+          if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+            showBanner('הגישה למיקרופון נחסמה. אשר הרשאת מיקרופון בדפדפן או הקלד טקסט ידנית.', 'error');
+          } else if (event.error === 'no-speech') {
+            showBanner('לא זוהה דיבור. נסה לדבר קרוב יותר למיקרופון.', 'warn');
+          } else if (event.error !== 'aborted') {
+            showBanner(`שגיאת זיהוי דיבור: ${event.error}. ניתן להשתמש בהקלדה כחלופה.`, 'warn');
+          }
+          stopRecognition();
+        };
+
+        recognition.onend = () => {
+          interimEl.textContent = '';
+          const captured = (finalTranscript || lastInterim).trim();
+          stopRecognition();
+          if (captured) {
+            inputEl.value = captured;
+            if (el.autoTranslateOnStop.checked) {
+              handleTranslate(speaker, captured);
+            } else {
+              interimEl.textContent = 'הדיבור נקלט — לחץ על כפתור הרמקול 🔊 או "תרגם והשמע" להקראה בשפת היעד.';
+            }
+          }
+        };
+
+        try {
+          recognition.start();
+        } catch (err) {
+          stopRecognition();
+          showBanner('לא ניתן להפעיל את המיקרופון כרגע.', 'error');
+        }
+      }
+
+      function copyOutput(speaker, btnEl) {
+        const text = state.lastTranslated[speaker];
+        if (!text) return;
+        const done = () => {
+          const orig = btnEl.textContent;
+          btnEl.textContent = 'הועתק!';
+          setTimeout(() => { btnEl.textContent = orig; }, 1400);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+        } else {
+          fallbackCopy(text, done);
+        }
+      }
+
+      function fallbackCopy(text, cb) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch (_) {}
+        document.body.removeChild(ta);
+        if (cb) cb();
+      }
+
+      function renderQuickPhrases() {
+        el.quickPhrasesGrid.innerHTML = '';
+        QUICK_PHRASES.forEach(p => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'text-xs sm:text-sm px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition';
+          btn.textContent = p.label;
+          btn.addEventListener('click', () => {
+            unlockSpeech();
+            const actor = state.phraseActor;
+            const isA = actor === 'A';
+            const sourceLang = isA ? el.langA.value : el.langB.value;
+            const targetLang = isA ? el.langB.value : el.langA.value;
+            const sourceText = p[sourceLang] || p.en;
+            const targetText = p[targetLang] || p.en;
+            const inputEl = isA ? el.inputA : el.inputB;
+            const outputEl = isA ? el.outputA : el.outputB;
+
+            inputEl.value = sourceText;
+            outputEl.textContent = targetText;
+            state.lastSourceText[actor] = sourceText;
+            state.lastSourceLang[actor] = sourceLang;
+            state.lastTranslated[actor] = targetText;
+            state.lastTargetLang[actor] = targetLang;
+            addHistoryEntry(actor, sourceLang, targetLang, sourceText, targetText);
+            if (el.autoSpeakToggle.checked) {
+              speakText(targetText, targetLang);
+            }
+          });
+          el.quickPhrasesGrid.appendChild(btn);
+        });
+      }
+
+      // Event Listeners
+      el.micBtnA.addEventListener('click', () => toggleMic('A'));
+      el.micBtnB.addEventListener('click', () => toggleMic('B'));
+
+      el.sendBtnA.addEventListener('click', () => { unlockSpeech(); handleTranslate('A', undefined, true); });
+      el.sendBtnB.addEventListener('click', () => { unlockSpeech(); handleTranslate('B', undefined, true); });
+
+      el.inputA.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          handleTranslate('A');
+        }
+      });
+      el.inputB.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          handleTranslate('B');
+        }
+      });
+
+      el.speakOutBtnA.addEventListener('click', () => {
+        unlockSpeech();
+        if (el.inputA.value.trim()) {
+          handleTranslate('A', undefined, true);
+        } else if (state.lastTranslated.A) {
+          speakText(state.lastTranslated.A, state.lastTargetLang.A);
+        }
+      });
+      el.speakOutBtnB.addEventListener('click', () => {
+        unlockSpeech();
+        if (el.inputB.value.trim()) {
+          handleTranslate('B', undefined, true);
+        } else if (state.lastTranslated.B) {
+          speakText(state.lastTranslated.B, state.lastTargetLang.B);
+        }
+      });
+      el.testAudioBtn.addEventListener('click', () => {
+        unlockSpeech();
+        const voices = ('speechSynthesis' in window) ? window.speechSynthesis.getVoices() : [];
+        if (voices.length === 0) {
+          showBanner('הקראה קולית מופעלת. אם אינך שומע קול, ייתכן שסביבת התצוגה המקדימה חוסמת שמע — הורד את הקובץ ופתח אותו ישירות ב-Chrome/Safari.', 'info');
+        }
+        speakText('בדיקת שמע, שלום', 'he');
+      });
+
+      el.copyBtnA.addEventListener('click', () => copyOutput('A', el.copyBtnA));
+      el.copyBtnB.addEventListener('click', () => copyOutput('B', el.copyBtnB));
+
+      el.langA.addEventListener('change', updateDirectionsAndTags);
+      el.langB.addEventListener('change', updateDirectionsAndTags);
+
+      el.swapLangsBtn.addEventListener('click', () => {
+        const tmp = el.langA.value;
+        el.langA.value = el.langB.value;
+        el.langB.value = tmp;
+        updateDirectionsAndTags();
+      });
+
+      el.flipModeBtn.addEventListener('click', () => {
+        state.faceToFace = !state.faceToFace;
+        el.panelB.classList.toggle('face-to-face-flip', state.faceToFace);
+        el.flipModeLabel.textContent = state.faceToFace ? 'מצב פנים-אל-פנים: פעיל' : 'מצב פנים-אל-פנים: כבוי';
+      });
+
+      el.phraseActorA.addEventListener('click', () => {
+        state.phraseActor = 'A';
+        el.phraseActorA.className = 'px-2.5 py-1 rounded-lg bg-sky-600 text-white font-medium';
+        el.phraseActorB.className = 'px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700';
+      });
+
+      el.phraseActorB.addEventListener('click', () => {
+        state.phraseActor = 'B';
+        el.phraseActorB.className = 'px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-medium';
+        el.phraseActorA.className = 'px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700';
+      });
+
+      el.clearHistoryBtn.addEventListener('click', () => {
+        state.history = [];
+        renderHistory();
+      });
+
+      el.dismissBannerBtn.addEventListener('click', hideBanner);
+
+      function setActiveTurn(turn) {
+        state.activeTurn = turn;
+        const isA = turn === 'A';
+
+        el.panelA.className = isA
+          ? 'bg-slate-900 border-2 border-sky-500/80 rounded-2xl p-4 sm:p-5 flex flex-col gap-3.5 shadow-lg transition'
+          : 'bg-slate-900 border border-slate-800 opacity-85 rounded-2xl p-4 sm:p-5 flex flex-col gap-3.5 shadow-lg transition';
+
+        el.panelB.className = (!isA
+          ? 'bg-slate-900 border-2 border-emerald-500/80 rounded-2xl p-4 sm:p-5 flex flex-col gap-3.5 shadow-lg transition-flip transition'
+          : 'bg-slate-900 border border-slate-800 opacity-85 rounded-2xl p-4 sm:p-5 flex flex-col gap-3.5 shadow-lg transition-flip transition')
+          + (state.faceToFace ? ' face-to-face-flip' : '');
+
+        el.turnStep1Btn.className = isA
+          ? 'px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-sky-600 text-white shadow transition'
+          : 'px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 transition';
+
+        el.turnStep2Btn.className = !isA
+          ? 'px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-emerald-600 text-white shadow transition'
+          : 'px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 transition';
+      }
+
+      el.turnStep1Btn.addEventListener('click', () => setActiveTurn('A'));
+      el.turnStep2Btn.addEventListener('click', () => setActiveTurn('B'));
+      el.switchTurnBtn.addEventListener('click', () => {
+        stopRecognition();
+        setActiveTurn(state.activeTurn === 'A' ? 'B' : 'A');
+      });
+
+      // Init
+      setActiveTurn('A');
+      updateDirectionsAndTags();
+      renderQuickPhrases();
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.getVoices();
+      }
+      if (!SpeechRecognitionAPI) {
+        showBanner('שים לב: זיהוי דיבור בדפדפן זה אינו זמין (נתמך בעיקר ב-Chrome / Edge / Safari). ניתן להקליד או לבחור משפטים מהירים לתרגום והקראה.', 'info');
+      }
+    })();
+  </script>
+</body>
+</html>
