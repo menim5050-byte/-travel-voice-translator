@@ -3,8 +3,11 @@
   "private": true,
   "scripts": {
     "build:css": "tailwindcss -c tailwind.config.js -i css/input.css -o css/styles.css --minify",
+    "stamp": "python3 tools/stamp-sw.py",
     "serve": "python3 -m http.server 8766",
-    "test": "python3 tests/e2e.py"
+    "test": "python3 tests/e2e.py && python3 tests/e2e_more.py && python3 tests/e2e_update.py"
   },
-  "devDependencies": { "tailwindcss": "3.4.17" }
+  "devDependencies": {
+    "tailwindcss": "3.4.17"
+  }
 }

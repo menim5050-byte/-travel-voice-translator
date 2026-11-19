@@ -1,6 +1,9 @@
 // שיחון אופליין בשש השפות העיקריות: he, en, ro, ar, th, ru.
 // quick:true = מופיע בשורת "משפטים מהירים" (כמו במקור). השאר תחת "עוד משפטים".
-export const CATEGORY_LABELS = { basic: 'בסיסי', move: 'תחבורה ודרכים', food: 'אוכל', help: 'עזרה ובריאות' };
+export const CATEGORY_LABELS = {
+  basic: 'בסיסי', move: 'תחבורה ומונית', money: 'כסף וקניות', hotel: 'מלון',
+  food: 'אוכל', help: 'עזרה, בריאות ובית מרקחת', car: 'רכב וקטנוע'
+};
 
 export const PHRASES = [
   // ---- שורת המשפטים המהירים (כמו בגרסת גימיני) ----
@@ -45,7 +48,45 @@ export const PHRASES = [
   { cat: 'help', he: 'אני צריך רופא', en: 'I need a doctor', ro: 'Am nevoie de un medic', ar: 'أحتاج إلى طبيب', th: 'ฉันต้องการหมอ', ru: 'Мне нужен врач' },
   { cat: 'help', he: 'איפה בית המרקחת?', en: 'Where is the pharmacy?', ro: 'Unde este farmacia?', ar: 'أين الصيدلية؟', th: 'ร้านขายยาอยู่ที่ไหน', ru: 'Где аптека?' },
   { cat: 'help', he: 'איבדתי את הדרכון שלי', en: 'I lost my passport', ro: 'Mi-am pierdut pașaportul', ar: 'فقدت جواز سفري', th: 'ฉันทำหนังสือเดินทางหาย', ru: 'Я потерял паспорт' },
-  { cat: 'help', he: 'אני מרגיש לא טוב', en: 'I do not feel well', ro: 'Nu mă simt bine', ar: 'لا أشعر أنني بخير', th: 'ฉันรู้สึกไม่สบาย', ru: 'Мне нехорошо' }
+  { cat: 'help', he: 'אני מרגיש לא טוב', en: 'I do not feel well', ro: 'Nu mă simt bine', ar: 'لا أشعر أنني بخير', th: 'ฉันรู้สึกไม่สบาย', ru: 'Мне нехорошо' },
+  // ---- נוספו בבדיקת העומק (19.11.2026). כדאי שדובר תאית יעבור על התאית. ----
+  { cat: 'basic', he: 'לחץ על הכפתור הירוק ודבר', en: 'Press the green button and speak', ro: 'Apăsați butonul verde și vorbiți', ar: 'اضغط على الزر الأخضر وتكلم', th: 'กดปุ่มสีเขียวแล้วพูดได้เลยครับ', ru: 'Нажмите зелёную кнопку и говорите' },
+
+  { cat: 'move', he: 'כמה עולה הנסיעה לכתובת הזו?', en: 'How much is the ride to this address?', ro: 'Cât costă cursa până la această adresă?', ar: 'كم أجرة الذهاب إلى هذا العنوان؟', th: 'ไปที่อยู่นี้ราคาเท่าไหร่ครับ', ru: 'Сколько стоит поездка по этому адресу?' },
+  { cat: 'move', he: 'חכה לי כאן, בבקשה', en: 'Please wait for me here', ro: 'Vă rog să mă așteptați aici', ar: 'من فضلك انتظرني هنا', th: 'กรุณารอผมที่นี่ครับ', ru: 'Подождите меня здесь, пожалуйста' },
+
+  { cat: 'money', he: 'זה יקר מדי', en: 'That is too expensive', ro: 'Este prea scump', ar: 'هذا غالٍ جداً', th: 'แพงเกินไปครับ', ru: 'Это слишком дорого' },
+  { cat: 'money', he: 'אפשר הנחה?', en: 'Can you give me a discount?', ro: 'Îmi puteți face o reducere?', ar: 'هل يمكنك أن تعطيني خصماً؟', th: 'ลดราคาได้ไหมครับ', ru: 'Можно скидку?' },
+  { cat: 'money', he: 'אפשר לשלם בכרטיס אשראי?', en: 'Can I pay by card?', ro: 'Pot plăti cu cardul?', ar: 'هل يمكنني الدفع بالبطاقة؟', th: 'จ่ายด้วยบัตรได้ไหมครับ', ru: 'Можно оплатить картой?' },
+  { cat: 'money', he: 'אני אשלם במזומן', en: 'I will pay in cash', ro: 'Voi plăti în numerar', ar: 'سأدفع نقداً', th: 'ผมจะจ่ายเงินสดครับ', ru: 'Я заплачу наличными' },
+  { cat: 'money', he: 'אפשר לכתוב את המחיר?', en: 'Can you write down the price?', ro: 'Puteți scrie prețul?', ar: 'هل يمكنك كتابة السعر؟', th: 'ช่วยเขียนราคาให้หน่อยได้ไหมครับ', ru: 'Напишите, пожалуйста, цену' },
+  { cat: 'money', he: 'אפשר קבלה?', en: 'Can I have a receipt?', ro: 'Pot primi o chitanță?', ar: 'هل يمكنني الحصول على إيصال؟', th: 'ขอใบเสร็จด้วยครับ', ru: 'Можно чек?' },
+  { cat: 'money', he: 'איפה יש כספומט?', en: 'Where is an ATM?', ro: 'Unde este un bancomat?', ar: 'أين يوجد صراف آلي؟', th: 'ตู้เอทีเอ็มอยู่ที่ไหนครับ', ru: 'Где банкомат?' },
+
+  { cat: 'hotel', he: 'יש לי הזמנה', en: 'I have a reservation', ro: 'Am o rezervare', ar: 'لدي حجز', th: 'ผมจองไว้แล้วครับ', ru: 'У меня бронь' },
+  { cat: 'hotel', he: 'מה הסיסמה של ה-Wi-Fi?', en: 'What is the Wi-Fi password?', ro: 'Care este parola de Wi-Fi?', ar: 'ما هي كلمة مرور الواي فاي؟', th: 'รหัสไวไฟคืออะไรครับ', ru: 'Какой пароль от Wi-Fi?' },
+  { cat: 'hotel', he: 'המזגן לא עובד', en: 'The air conditioner is not working', ro: 'Aerul condiționat nu funcționează', ar: 'المكيف لا يعمل', th: 'แอร์ไม่ทำงานครับ', ru: 'Кондиционер не работает' },
+  { cat: 'hotel', he: 'אפשר להשאיר כאן את המזוודות?', en: 'Can I leave my luggage here?', ro: 'Pot să-mi las bagajele aici?', ar: 'هل يمكنني ترك حقائبي هنا؟', th: 'ฝากกระเป๋าไว้ที่นี่ได้ไหมครับ', ru: 'Можно оставить здесь багаж?' },
+  { cat: 'hotel', he: 'באיזו שעה ארוחת הבוקר?', en: 'What time is breakfast?', ro: 'La ce oră este micul dejun?', ar: 'في أي ساعة الفطور؟', th: 'อาหารเช้ากี่โมงครับ', ru: 'Во сколько завтрак?' },
+
+  { cat: 'food', he: 'בלי חזיר, בבקשה', en: 'No pork, please', ro: 'Fără carne de porc, vă rog', ar: 'بدون لحم خنزير من فضلك', th: 'ไม่ใส่หมูครับ', ru: 'Без свинины, пожалуйста' },
+  { cat: 'food', he: 'בלי סוכר, בבקשה', en: 'No sugar, please', ro: 'Fără zahăr, vă rog', ar: 'بدون سكر من فضلك', th: 'ไม่ใส่น้ำตาลครับ', ru: 'Без сахара, пожалуйста' },
+  { cat: 'food', he: 'בלי קרח, בבקשה', en: 'No ice, please', ro: 'Fără gheață, vă rog', ar: 'بدون ثلج من فضلك', th: 'ไม่ใส่น้ำแข็งครับ', ru: 'Без льда, пожалуйста' },
+  { cat: 'food', he: 'לקחת, בבקשה', en: 'To take away, please', ro: 'La pachet, vă rog', ar: 'للأخذ معي من فضلك', th: 'ห่อกลับบ้านครับ', ru: 'С собой, пожалуйста' },
+
+  { cat: 'help', he: 'יש לי כאב ראש', en: 'I have a headache', ro: 'Mă doare capul', ar: 'عندي صداع', th: 'ผมปวดหัวครับ', ru: 'У меня болит голова' },
+  { cat: 'help', he: 'יש לי חום', en: 'I have a fever', ro: 'Am febră', ar: 'عندي حمّى', th: 'ผมมีไข้ครับ', ru: 'У меня температура' },
+  { cat: 'help', he: 'כואבת לי הבטן', en: 'I have a stomach ache', ro: 'Mă doare stomacul', ar: 'عندي ألم في المعدة', th: 'ผมปวดท้องครับ', ru: 'У меня болит живот' },
+  { cat: 'help', he: 'יש לי שלשול', en: 'I have diarrhea', ro: 'Am diaree', ar: 'عندي إسهال', th: 'ผมท้องเสียครับ', ru: 'У меня диарея' },
+  { cat: 'help', he: 'אני אלרגי לפניצילין', en: 'I am allergic to penicillin', ro: 'Sunt alergic la penicilină', ar: 'عندي حساسية من البنسلين', th: 'ผมแพ้ยาเพนิซิลลินครับ', ru: 'У меня аллергия на пенициллин' },
+  { cat: 'help', he: 'איפה בית המרקחת הקרוב?', en: 'Where is the nearest pharmacy?', ro: 'Unde este cea mai apropiată farmacie?', ar: 'أين أقرب صيدلية؟', th: 'ร้านขายยาที่ใกล้ที่สุดอยู่ที่ไหนครับ', ru: 'Где ближайшая аптека?' },
+  { cat: 'help', he: 'איפה בית החולים הקרוב?', en: 'Where is the nearest hospital?', ro: 'Unde este cel mai apropiat spital?', ar: 'أين أقرب مستشفى؟', th: 'โรงพยาบาลที่ใกล้ที่สุดอยู่ที่ไหนครับ', ru: 'Где ближайшая больница?' },
+
+  { cat: 'car', he: 'איפה תחנת דלק?', en: 'Where is a gas station?', ro: 'Unde este o benzinărie?', ar: 'أين توجد محطة وقود؟', th: 'ปั๊มน้ำมันอยู่ที่ไหนครับ', ru: 'Где заправка?' },
+  { cat: 'car', he: 'מלא, בבקשה', en: 'Fill it up, please', ro: 'Plinul, vă rog', ar: 'املأ الخزان من فضلك', th: 'เติมเต็มถังครับ', ru: 'Полный бак, пожалуйста' },
+  { cat: 'car', he: 'יש לי פנצ׳ר', en: 'I have a flat tire', ro: 'Am o pană de cauciuc', ar: 'عندي إطار مثقوب', th: 'ยางรถแบนครับ', ru: 'У меня спустило колесо' },
+  { cat: 'car', he: 'אני צריך מוסך', en: 'I need a mechanic', ro: 'Am nevoie de un mecanic', ar: 'أحتاج إلى ميكانيكي', th: 'ผมต้องการช่างซ่อมรถครับ', ru: 'Мне нужен механик' },
+  { cat: 'car', he: 'אני רוצה לשכור קטנוע', en: 'I want to rent a scooter', ro: 'Vreau să închiriez un scuter', ar: 'أريد استئجار سكوتر', th: 'ผมอยากเช่ามอเตอร์ไซค์ครับ', ru: 'Я хочу арендовать скутер' }
 ];
 
 // תבנית ל"קח אותי למלון". הכתובת עצמה מצורפת בסוף ולא מתורגמת, כדי ששם המלון לא ישתבש.

@@ -1,4 +1,4 @@
-import json, sys, urllib.parse
+import json, re, sys, subprocess, urllib.parse
 from playwright.sync_api import sync_playwright
 URL='http://localhost:8766/index.html'; OUT='tests/out'
 errors=[]; results=[]
@@ -25,7 +25,8 @@ MOCK = """
 })();
 """
 CORS={'access-control-allow-origin':'*','content-type':'application/json'}
-mm_calls=[]; lingva_calls=[]; mode={'mm':'ok','lingva':'ok'}
+mm_calls=[]; lingva_calls=[]; google_calls=[]; mode={'mm':'ok','lingva':'ok','google':'fail'}
+SW_VERSION=re.search(r"const VERSION = '([^']*)'", open('sw.js',encoding='utf-8').read()).group(1)
 def mm(route):
     u=route.request.url; mm_calls.append(u)
     q=urllib.parse.parse_qs(urllib.parse.urlparse(u).query)
@@ -34,6 +35,10 @@ def mm(route):
         route.fulfill(status=200,headers=CORS,body=json.dumps({'responseData':{'translatedText':'MM:'+text},'responseStatus':200}))
     elif mode['mm']=='quota':
         route.fulfill(status=200,headers=CORS,body=json.dumps({'responseData':{'translatedText':'MYMEMORY WARNING: YOU USED ALL AVAILABLE FREE TRANSLATIONS FOR TODAY'},'responseStatus':429}))
+    else: route.abort()
+def google(route):
+    google_calls.append(route.request.url)
+    if mode['google']=='ok': route.fulfill(status=200,headers=CORS,body=json.dumps([['GG:ok','iw']]))
     else: route.abort()
 def lingva(route):
     lingva_calls.append(route.request.url)
@@ -49,6 +54,7 @@ with sync_playwright() as p:
     page.on('pageerror',lambda e: errors.append(str(e)))
     page.route('https://api.mymemory.translated.net/**',mm)
     page.route('https://lingva.ml/**',lingva)
+    page.route('https://clients5.google.com/**',google)
     page.route('https://lingva.lunar.icu/**',lambda r:r.abort())
     page.route('https://translate.plausibility.cloud/**',lambda r:r.abort())
     page.route('https://www.google.com/maps/**',lambda r:r.fulfill(status=200,body='maps'))
@@ -81,12 +87,20 @@ with sync_playwright() as p:
     page.wait_for_function("document.getElementById('outputA').textContent==='LG:ok'")
     ok('fallback to Lingva on quota', len(lingva_calls)>=1)
     ok('Lingva uses iw for Hebrew', '/api/v1/iw/en/' in lingva_calls[0], lingva_calls[0][:60])
+    ok('quota pauses MyMemory', page.evaluate("!!localStorage.getItem('tvt_mm_skip')"))
+    n=len(mm_calls); mode['google']='ok'; mode['lingva']='fail'
+    page.fill('#inputA','משפט חדש בזמן שהמכסה נגמרה'); page.click('#sendBtnA')
+    page.wait_for_function("document.getElementById('outputA').textContent==='GG:ok'")
+    ok('paused MyMemory skipped, Google backup used', len(mm_calls)==n and 'sl=iw&tl=en' in google_calls[-1], google_calls[-1][:90])
+    mode['google']='fail'; mode['lingva']='ok'
+    page.evaluate("localStorage.removeItem('tvt_mm_skip')")
 
     # כולם נפלו
     mode['mm']='fail'; mode['lingva']='fail'
     page.fill('#inputA','משפט שלא נשמר ולא בשיחון בכלל'); page.click('#sendBtnA')
-    page.wait_for_function("!document.getElementById('statusBanner').classList.contains('hidden')")
+    page.wait_for_function("!document.getElementById('statusBanner').classList.contains('hidden') && document.getElementById('statusBannerText').textContent.includes('לא זמינים')", timeout=15000)
     ok('error banner when all providers fail','לא זמינים' in page.inner_text('#statusBannerText'))
+    ok('failed output clears last translation', page.evaluate("document.getElementById('outputA').textContent")=='שגיאה בתרגום.')
     page.click('#dismissBannerBtn')
     mode['mm']='ok'; mode['lingva']='ok'
 
@@ -127,10 +141,14 @@ with sync_playwright() as p:
     page.select_option('#langA','he'); page.select_option('#langB','en')
     page.fill('#hotelInput','Hilton Tel Aviv'); page.click('#hotelGoBtn'); page.wait_for_timeout(300)
     ok('hotel he->en template + address', page.inner_text('#outputA')=='Please take me to this address: Hilton Tel Aviv', page.inner_text('#outputA'))
+    ok('hotel opens big text for the driver', page.is_visible('#bigTextModal') and 'Hilton' in page.inner_text('#bigTextContent'))
+    page.click('#bigTextCloseBtn')
     page.select_option('#langB','es'); page.click('#hotelGoBtn'); page.wait_for_timeout(500)
     ok('hotel to Spanish: translated template + untouched hotel name', page.inner_text('#outputA').endswith('Hilton Tel Aviv') and page.inner_text('#outputA').startswith('MM:'), page.inner_text('#outputA'))
+    page.click('#bigTextCloseBtn')
     page.select_option('#langA','es'); page.select_option('#langB','en'); page.click('#hotelGoBtn'); page.wait_for_timeout(400)
     ok('hotel works when speaker A is not Hebrew', page.inner_text('#outputA')=='Please take me to this address: Hilton Tel Aviv')
+    page.click('#bigTextCloseBtn')
     page.select_option('#langA','he'); page.select_option('#langB','en')
     with ctx.expect_page() as pop:
         page.click('#hotelMapBtn')
@@ -140,10 +158,14 @@ with sync_playwright() as p:
     # פנים-אל-פנים והגדלה
     page.click('#flipModeBtn')
     ok('face-to-face', 'face-to-face-flip' in page.get_attribute('#panelB','class') and 'פעיל' in page.inner_text('#flipModeLabel'))
-    page.click('#switchTurnBtn')
+    ok('face-to-face: each side gets its own translation', page.evaluate("document.getElementById('panelB').contains(document.getElementById('outBoxA')) && document.getElementById('panelA').contains(document.getElementById('outBoxB'))"))
+    ok('face-to-face: speaker B side in English', page.inner_text('#micLabelB')=='Tap and speak' and page.inner_text('#titleB')=='Speaker B', page.inner_text('#micLabelB'))
+    ok('face-to-face: turn bar and history hidden', not page.is_visible('#turnSection') and not page.is_visible('#historySection'))
+    page.evaluate("document.getElementById('switchTurnBtn').click()")
     ok('flip survives turn switch','face-to-face-flip' in page.get_attribute('#panelB','class'))
     page.screenshot(path=f'{OUT}/m3_face.png')
     page.click('#flipModeBtn')
+    ok('normal mode restores layout and Hebrew', page.evaluate("document.getElementById('panelA').contains(document.getElementById('outBoxA'))") and page.inner_text('#micLabelB')=='לחץ לדיבור (דובר ב׳)')
     page.click('#bigTextBtnA'); page.wait_for_selector('#bigTextModal:not(.hidden)')
     ok('big text modal shows translation', 'Hilton' in page.inner_text('#bigTextContent'))
     page.screenshot(path=f'{OUT}/m4_big.png')
@@ -170,8 +192,8 @@ with sync_playwright() as p:
     page.wait_for_function("navigator.serviceWorker.ready.then(()=>true)")
     page.reload(); page.wait_for_load_state('networkidle')
     ok('SW controlling', page.evaluate("!!navigator.serviceWorker.controller"))
-    cached=page.evaluate("caches.open('tvt-v6').then(c=>c.keys()).then(k=>k.map(r=>new URL(r.url).pathname.split('/').pop()||'/'))")
-    need={'index.html','manifest.json','styles.css','app.js','languages.js','phrasebook.js','translate.js','speech.js','icon-192.png','icon-512.png','icon-maskable-512.png','apple-touch-icon.png'}
+    cached=page.evaluate(f"caches.open('{SW_VERSION}').then(c=>c.keys()).then(k=>k.map(r=>new URL(r.url).pathname.split('/').pop()||'/'))")
+    need={'index.html','manifest.json','styles.css','app.js','languages.js','phrasebook.js','translate.js','speech.js','ui-strings.js','icon-192.png','icon-512.png','icon-maskable-512.png','apple-touch-icon.png'}
     ok('all assets cached', need<=set(cached), str(sorted(need-set(cached))))
     ctx.set_offline(True)
     page.reload(); page.wait_for_load_state('domcontentloaded')
@@ -192,6 +214,8 @@ with sync_playwright() as p:
     dp.goto(URL); dp.wait_for_load_state('networkidle'); dp.screenshot(path=f'{OUT}/d1_desktop.png')
     b.close()
 
+stamp=subprocess.run([sys.executable,'tools/stamp-sw.py','--check'],capture_output=True,text=True)
+ok('sw.js VERSION matches files', stamp.returncode==0, stamp.stdout.strip())
 real=[e for e in errors if 'Failed to load resource' not in e and 'ERR_FAILED' not in e and 'net::' not in e]
 ok('no JS errors', not real, str(real))
 fails=[r[0] for r in results if not r[1]]

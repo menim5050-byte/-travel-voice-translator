@@ -1,7 +1,10 @@
 import { LANGUAGES } from './languages.js';
 import { PHRASES } from './phrasebook.js';
 
-// מופעי Lingva ציבוריים של מתנדבים, חלקם נופלים מדי פעם. נבדקים לפי הסדר.
+// סדר הניסיון: שיחון (בלי רשת) ← זיכרון ← MyMemory ← גיבויים במקביל (Google לא רשמי, Lingva).
+// Google הלא רשמי: חינמי ועובד מהדפדפן, אבל אינו שירות רשמי ועלול להיחסם בלי הודעה.
+// Lingva: שרתי מתנדבים. בבדיקה ב-19.11.2026 כולם החזירו שגיאות, ולכן הם רק גיבוי אחרון.
+export const GOOGLE_URL = 'https://clients5.google.com/translate_a/t';
 export const LINGVA_INSTANCES = [
   'https://lingva.ml',
   'https://lingva.lunar.icu',
@@ -10,22 +13,50 @@ export const LINGVA_INSTANCES = [
 
 const EMAIL_KEY = 'tvt_email';
 const CACHE_KEY = 'tvt_cache_v2';
+const MM_SKIP_KEY = 'tvt_mm_skip';
 const CACHE_MAX = 300;
 
+const TOTAL_DEADLINE_MS = 12000;  // תקרה לכל התרגום, כדי שלא יחכו חצי דקה ברשת חלשה
+const MM_TIMEOUT_MS = 6000;
+const BACKUP_TIMEOUT_MS = 6000;
+const MM_MAX_BYTES = 450;         // MyMemory מקבל עד 500 בתים לבקשה
+const BACKUP_MAX_BYTES = 1500;    // שומרים על כתובת קצרה מספיק
+const HOST_COOLDOWN_MS = 10 * 60 * 1000; // שרת גיבוי שנכשל לא נוסה שוב 10 דקות
+
+const own = (o, k) => o !== null && typeof o === 'object' && Object.prototype.hasOwnProperty.call(o, k);
+export const isLang = k => typeof k === 'string' && own(LANGUAGES, k);
+
+/* ---------- אימייל ---------- */
 export function getEmail() { try { return localStorage.getItem(EMAIL_KEY) || ''; } catch { return ''; } }
 export function setEmail(v) { try { v ? localStorage.setItem(EMAIL_KEY, v) : localStorage.removeItem(EMAIL_KEY); } catch { /* ignore */ } }
 
-function loadCache() { try { return JSON.parse(localStorage.getItem(CACHE_KEY) || '{}'); } catch { return {}; } }
-function saveCache(c) {
+/* ---------- זיכרון תרגומים ---------- */
+let cacheGen = 0; // עולה בכל ניקוי, כדי שבקשה שהייתה באוויר לא תחזיר את הזיכרון הישן
+function loadCache() {
   try {
+    const c = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
+    return c && typeof c === 'object' && !Array.isArray(c) ? c : {};
+  } catch { return {}; }
+}
+function cacheGet(key) {
+  const c = loadCache();
+  return own(c, key) && typeof c[key] === 'string' && c[key] ? c[key] : null;
+}
+function cachePut(key, value, gen) {
+  if (gen !== cacheGen) return;
+  try {
+    const c = loadCache(); // קוראים מחדש רגע לפני הכתיבה, כדי לא לדרוס תרגום שנשמר במקביל
+    delete c[key];
+    c[key] = value;
     const keys = Object.keys(c);
     if (keys.length > CACHE_MAX) keys.slice(0, keys.length - CACHE_MAX).forEach(k => delete c[k]);
     localStorage.setItem(CACHE_KEY, JSON.stringify(c));
-  } catch { /* אחסון מלא או חסום, ממשיכים בלי מטמון */ }
+  } catch { /* אחסון מלא או חסום, ממשיכים בלי זיכרון */ }
 }
-export function clearCache() { try { localStorage.removeItem(CACHE_KEY); } catch { /* ignore */ } }
+export function clearCache() { cacheGen++; try { localStorage.removeItem(CACHE_KEY); } catch { /* ignore */ } }
 export function cacheSize() { return Object.keys(loadCache()).length; }
 
+/* ---------- שיחון ---------- */
 const norm = s => s.trim().toLowerCase().replace(/[.!?؟,،。！？\s]+$/g, '').replace(/\s+/g, ' ');
 
 // התאמה מדויקת לשיחון המובנה. עובד בלי אינטרנט.
@@ -35,83 +66,228 @@ export function phrasebookLookup(text, from, to) {
   return hit && hit[to] ? hit[to] : null;
 }
 
+/* ---------- עזרים ---------- */
 function decodeEntities(s) {
   const t = document.createElement('textarea');
   t.innerHTML = s;
   return t.value;
 }
 
-// MyMemory מוסיף לפעמים מרכאות או מקפים סביב התרגום
+// שירותים מוסיפים לפעמים מרכאות או מקפים סביב התרגום
 function tidy(out, src) {
-  let t = decodeEntities(out).trim();
+  let t = decodeEntities(String(out)).trim();
   const wrapped = (a, b) => t.startsWith(a) && t.endsWith(b) && !(src.startsWith(a) && src.endsWith(b));
   if (wrapped('"', '"') || wrapped('“', '”') || wrapped('«', '»')) t = t.slice(1, -1).trim();
   t = t.replace(/^-\s*(.*?)\s*-$/, '$1').trim();
   return t;
 }
 
-async function fetchJson(url, timeoutMs) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { signal: ctrl.signal });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    return await res.json();
-  } finally { clearTimeout(timer); }
+const enc = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null;
+const bytes = s => (enc ? enc.encode(s).length : unescape(encodeURIComponent(s)).length);
+
+// מפרק למשפטים בלי לאבד אף תו (סימני פיסוק ורווחים נשארים עם המשפט שלפניהם)
+const SENTENCE_END = '.!?؟。！？\n';
+function sentences(text) {
+  const out = [];
+  let cur = '';
+  for (let i = 0; i < text.length; i++) {
+    cur += text[i];
+    if (SENTENCE_END.includes(text[i])) {
+      while (i + 1 < text.length && (SENTENCE_END.includes(text[i + 1]) || /\s/.test(text[i + 1]))) cur += text[++i];
+      out.push(cur);
+      cur = '';
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
 }
 
-async function viaMyMemory(text, from, to) {
+/** מחלק טקסט ארוך לחלקים לפי סוף משפט, אחר כך לפי מילים, ובמקרה קיצון לפי תווים. */
+export function splitText(text, maxBytes) {
+  if (bytes(text) <= maxBytes) return [text];
+  const out = [];
+  let cur = '';
+  const push = s => { if (s.trim()) out.push(s.trim()); };
+  const add = piece => {
+    if (bytes(cur + piece) <= maxBytes) { cur += piece; return; }
+    push(cur); cur = '';
+    if (bytes(piece) <= maxBytes) { cur = piece; return; }
+    for (const w of piece.split(/(\s+)/)) {
+      if (bytes(cur + w) <= maxBytes) { cur += w; continue; }
+      push(cur); cur = '';
+      if (bytes(w) <= maxBytes) { cur = w; continue; }
+      let part = '';
+      for (const ch of w) { if (bytes(part + ch) > maxBytes) { push(part); part = ''; } part += ch; }
+      cur = part;
+    }
+  };
+  sentences(text).forEach(add);
+  push(cur);
+  return out;
+}
+
+async function fetchJson(url, timeoutMs, outer) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const onOuter = () => ctrl.abort();
+  if (outer) { if (outer.aborted) ctrl.abort(); else outer.addEventListener('abort', onOuter); }
+  try {
+    const res = await fetch(url, { signal: ctrl.signal, referrerPolicy: 'no-referrer' });
+    if (!res.ok) {
+      const err = new Error('HTTP ' + res.status);
+      err.status = res.status;
+      try { err.body = await res.text(); } catch { /* ignore */ }
+      throw err;
+    }
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+    if (outer) outer.removeEventListener('abort', onOuter);
+  }
+}
+
+// מתרגם חלק אחרי חלק (במקביל) ומחבר בחזרה. בסינית וביפנית אין רווחים בין משפטים.
+const NO_SPACE_LANGS = new Set(['zh', 'ja']);
+async function inChunks(fn, text, maxBytes, from, to, ...rest) {
+  const parts = splitText(text, maxBytes);
+  if (parts.length === 1) return fn(parts[0], from, to, ...rest);
+  const outs = await Promise.all(parts.map(p => fn(p, from, to, ...rest)));
+  return outs.map(o => o.trim()).join(NO_SPACE_LANGS.has(to) ? '' : ' ').trim();
+}
+
+// הראשון שמצליח מנצח. אם כולם נכשלים, נדחה.
+function firstSuccess(tasks) {
+  return new Promise((resolve, reject) => {
+    let left = tasks.length;
+    if (!left) { reject(new Error('none')); return; }
+    tasks.forEach(t => t.then(resolve, () => { if (--left === 0) reject(new Error('all failed')); }));
+  });
+}
+
+/* ---------- MyMemory ---------- */
+function mmSkipped() {
+  try {
+    const s = JSON.parse(localStorage.getItem(MM_SKIP_KEY) || 'null');
+    return !!(s && Date.now() < s.until && s.email === getEmail());
+  } catch { return false; }
+}
+function mmPause(details) {
+  // "NEXT AVAILABLE IN 23 HOURS 59 MINUTES". מחכים לכל היותר שעה ומנסים שוב (אולי החיבור התחלף).
+  const m = /NEXT AVAILABLE IN\s+(\d+)\s*HOURS?(?:\s+(\d+)\s*MINUTES?)?/i.exec(details || '');
+  const ms = m ? (Number(m[1]) * 60 + Number(m[2] || 0)) * 60000 : 60 * 60000;
+  try { localStorage.setItem(MM_SKIP_KEY, JSON.stringify({ until: Date.now() + Math.min(ms, 60 * 60000), email: getEmail() })); } catch { /* ignore */ }
+}
+const MM_ERROR_TEXT = /^\s*(MYMEMORY WARNING|QUERY LENGTH LIMIT|INVALID (LANGUAGE PAIR|SOURCE LANGUAGE|TARGET LANGUAGE|EMAIL)|PLEASE SELECT TWO DISTINCT LANGUAGES|NO QUERY SPECIFIED)/;
+
+async function viaMyMemory(text, from, to, signal) {
   let url = 'https://api.mymemory.translated.net/get?q=' + encodeURIComponent(text) +
     '&langpair=' + encodeURIComponent(LANGUAGES[from].mm + '|' + LANGUAGES[to].mm);
   const email = getEmail();
   if (email) url += '&de=' + encodeURIComponent(email);
-  const d = await fetchJson(url, 7000);
+  let d = null;
+  try { d = await fetchJson(url, MM_TIMEOUT_MS, signal); }
+  catch (e) { if (e.body) { try { d = JSON.parse(e.body); } catch { /* ignore */ } } if (!d) throw e; }
   const out = d && d.responseData && d.responseData.translatedText;
-  if (Number(d.responseStatus) !== 200 || !out || /MYMEMORY WARNING|INVALID|QUERY LENGTH/i.test(out)) {
-    throw new Error('MyMemory: ' + (d.responseDetails || d.responseStatus));
+  const details = String((d && d.responseDetails) || '') + ' ' + String(out || '');
+  if (Number(d && d.responseStatus) === 429 || /USED ALL AVAILABLE FREE TRANSLATIONS/i.test(details)) {
+    mmPause(details);
+    throw new Error('mymemory quota');
+  }
+  if (Number(d && d.responseStatus) !== 200 || typeof out !== 'string' || !out.trim() || MM_ERROR_TEXT.test(out)) {
+    throw new Error('MyMemory: ' + details.trim());
   }
   return tidy(out, text);
 }
 
-async function viaLingva(text, from, to) {
-  let lastErr;
-  for (const base of LINGVA_INSTANCES) {
-    try {
-      const url = `${base}/api/v1/${LANGUAGES[from].lingva}/${LANGUAGES[to].lingva}/${encodeURIComponent(text)}`;
-      const d = await fetchJson(url, 6000);
-      if (d && d.translation) return tidy(d.translation, text);
-      throw new Error('empty');
-    } catch (e) { lastErr = e; }
-  }
-  throw lastErr || new Error('Lingva');
+/* ---------- גיבויים ---------- */
+const hostFailedAt = {};
+const hostCooling = host => Date.now() - (hostFailedAt[host] || 0) < HOST_COOLDOWN_MS;
+const markFailed = host => { hostFailedAt[host] = Date.now(); };
+
+const googleCode = k => (k === 'zh' ? 'zh-CN' : LANGUAGES[k].lingva);
+
+// התשובה מגיעה בכמה צורות: ["תרגום"], [["תרגום","en"]], או {sentences:[{trans}]}
+export function parseGoogle(d) {
+  const pick = x => (typeof x === 'string' ? x : Array.isArray(x) ? pick(x[0]) : '');
+  if (Array.isArray(d)) return d.map(pick).join(' ').trim();
+  if (d && Array.isArray(d.sentences)) return d.sentences.map(s => (s && s.trans) || '').join('').trim();
+  return '';
 }
 
-/** מחזיר { text, source } כאשר source הוא phrasebook | cache | mymemory | lingva | same */
-export async function translate(text, from, to) {
-  const clean = text.trim();
+async function viaGoogle(text, from, to, signal) {
+  const url = `${GOOGLE_URL}?client=dict-chrome-ex&sl=${googleCode(from)}&tl=${googleCode(to)}&q=${encodeURIComponent(text)}`;
+  const out = parseGoogle(await fetchJson(url, BACKUP_TIMEOUT_MS, signal));
+  if (!out) throw new Error('google: empty');
+  return tidy(out, text);
+}
+
+async function viaLingvaAt(base, text, from, to, signal) {
+  const url = `${base}/api/v1/${LANGUAGES[from].lingva}/${LANGUAGES[to].lingva}/${encodeURIComponent(text)}`;
+  const d = await fetchJson(url, BACKUP_TIMEOUT_MS, signal);
+  if (!d || typeof d.translation !== 'string' || !d.translation.trim()) throw new Error('lingva: empty');
+  return tidy(d.translation, text);
+}
+
+function backups(text, from, to, signal) {
+  // Google תמיד מנוסה. שרת Lingva שנכשל לאחרונה מדולג (חוסך בקשות מיותרות, לא זמן, כי הכל רץ במקביל).
+  const lingva = LINGVA_INSTANCES.map(base => ({ host: base, name: 'lingva', run: (t, f, o) => viaLingvaAt(base, t, f, o, signal) }));
+  let lingvaUsable = lingva.filter(b => !hostCooling(b.host));
+  if (!lingvaUsable.length) lingvaUsable = lingva;
+  const list = [{ host: GOOGLE_URL, name: 'google', run: (t, f, o) => viaGoogle(t, f, o, signal) }].concat(lingvaUsable);
+  return list.map(b => inChunks(b.run, text, BACKUP_MAX_BYTES, from, to)
+    .then(out => ({ text: out, source: b.name }))
+    .catch(e => { if (!signal.aborted) markFailed(b.host); throw e; }));
+}
+
+/* ---------- הפונקציה הראשית ---------- */
+const MSG_OFFLINE = 'אין חיבור לאינטרנט. משפטים מהשיחון (משפטים מהירים ו"עוד משפטים") עובדים גם בלי רשת.';
+const MSG_UNAVAILABLE = 'שירותי התרגום לא זמינים כרגע. בדוק חיבור אינטרנט ונסה שוב, או השתמש במשפטים המהירים.';
+const MSG_TIMEOUT = 'התרגום לוקח יותר מדי זמן (הרשת חלשה). נסה שוב, או השתמש במשפטים המהירים שעובדים בלי רשת.';
+
+/**
+ * מחזיר { text, source } כאשר source הוא phrasebook | cache | mymemory | google | lingva | same.
+ * options.onBackup() נקרא כשעוברים לשירותי הגיבוי (כדי להציג "מנסה שירות גיבוי").
+ */
+export async function translate(text, from, to, options = {}) {
+  const clean = String(text || '').trim();
   if (!clean) return { text: '', source: 'none' };
+  if (!isLang(from) || !isLang(to)) throw new Error('שפה לא מוכרת.');
   if (from === to) return { text: clean, source: 'same' };
 
   const local = phrasebookLookup(clean, from, to);
   if (local) return { text: local, source: 'phrasebook' };
 
   const key = `${from}|${to}|${clean}`;
-  const cache = loadCache();
-  if (cache[key]) return { text: cache[key], source: 'cache' };
+  const cached = cacheGet(key);
+  if (cached) return { text: cached, source: 'cache' };
 
-  if (!navigator.onLine) {
-    throw new Error('אין חיבור לאינטרנט. משפטים מהשיחון (משפטים מהירים ו"עוד משפטים") עובדים גם בלי רשת.');
-  }
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new Error(MSG_OFFLINE);
 
-  for (const [name, fn] of [['mymemory', viaMyMemory], ['lingva', viaLingva]]) {
+  const gen = cacheGen;
+  const ctrl = new AbortController();
+  let timedOut = false;
+  const deadline = setTimeout(() => { timedOut = true; ctrl.abort(); }, TOTAL_DEADLINE_MS);
+  const finish = (out, source) => { cachePut(key, out, gen); return { text: out, source }; };
+
+  try {
+    let sameAsSource = null;
+    if (!mmSkipped()) {
+      try {
+        const out = await inChunks(viaMyMemory, clean, MM_MAX_BYTES, from, to, ctrl.signal);
+        if (norm(out) !== norm(clean)) return finish(out, 'mymemory');
+        sameAsSource = out; // חזר בלי שינוי: אולי שם או מספר, אולי כשל. נבדוק בגיבוי.
+      } catch { /* עוברים לגיבוי */ }
+    }
+    if (timedOut) throw new Error(MSG_TIMEOUT);
+    if (options.onBackup) { try { options.onBackup(); } catch { /* ignore */ } }
     try {
-      const out = await fn(clean, from, to);
-      if (out) {
-        cache[key] = out;
-        saveCache(cache);
-        return { text: out, source: name };
-      }
-    } catch (e) { /* עוברים לספק הבא */ }
+      const r = await firstSuccess(backups(clean, from, to, ctrl.signal));
+      return finish(r.text, r.source);
+    } catch { /* כולם נכשלו */ }
+    if (sameAsSource) return { text: sameAsSource, source: 'mymemory' };
+    throw new Error(timedOut ? MSG_TIMEOUT : MSG_UNAVAILABLE);
+  } finally {
+    clearTimeout(deadline);
+    ctrl.abort(); // עוצר בקשות גיבוי שעדיין באוויר
   }
-  throw new Error('שירותי התרגום לא זמינים כרגע. בדוק חיבור אינטרנט ונסה שוב, או השתמש במשפטים המהירים.');
 }

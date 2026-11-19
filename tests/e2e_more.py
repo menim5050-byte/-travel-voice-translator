@@ -1,0 +1,247 @@
+"""Regression tests for the fixes from the 19.11.2026 audit.
+Needs a server: python3 -m http.server 8766 (from the repo root), then: python3 tests/e2e_more.py
+"""
+import json, sys, time, urllib.parse
+from playwright.sync_api import sync_playwright
+
+URL = 'http://localhost:8766/index.html'
+results = []
+def ok(name, cond, extra=''):
+    results.append((name, bool(cond))); print(('PASS' if cond else 'FAIL'), name, extra)
+
+MOCK = r"""
+(() => {
+  window.__spoken = []; window.__recs = [];
+  window.__voices = window.__voices || [{lang:'he-IL'},{lang:'en-US'},{lang:'ru-RU'},{lang:'th-TH'}];
+  const micOpen = () => ['A','B'].some(s => document.getElementById('micBtn'+s).classList.contains('mic-listening'));
+  const synth = { speaking:false, pending:false,
+    getVoices(){ return window.__voices; },
+    speak(u){ window.__spoken.push({text:u.text, lang:u.lang, mic: micOpen()}); setTimeout(()=>{u.onstart&&u.onstart(); u.onend&&u.onend();}, 20); },
+    cancel(){}, pause(){}, resume(){}, addEventListener(){} };
+  Object.defineProperty(window, 'speechSynthesis', {value: synth, configurable: true});
+  window.SpeechSynthesisUtterance = function(t){ this.text = t; };
+  window.SpeechRecognition = window.webkitSpeechRecognition = function(){
+    const rec = this; rec.stopped = false; window.__recs.push(rec);
+    rec.start = () => setTimeout(() => rec.onstart && rec.onstart(), 10);
+    rec.stop = () => { if (rec.stopped) return; rec.stopped = true; setTimeout(() => rec.onend && rec.onend(), 80); };
+  };
+  window.__say = t => {
+    const rec = [...window.__recs].reverse().find(r => !r.stopped);
+    rec.onresult({resultIndex:0, results:[Object.assign([{transcript:t}], {isFinal:true})]});
+    rec.stopped = true; setTimeout(() => rec.onend && rec.onend(), 20);
+  };
+})();
+"""
+CORS = {'access-control-allow-origin': '*', 'content-type': 'application/json'}
+mode = {'mm': 'ok', 'google': 'fail', 'lingva': 'fail'}
+mm_calls, held = [], []
+
+def mm(route):
+    u = route.request.url; mm_calls.append(u)
+    q = urllib.parse.parse_qs(urllib.parse.urlparse(u).query)['q'][0]
+    m = mode['mm']
+    if m == 'hold' or (m == 'hold-first' and not held): held.append((route, q)); return
+    if m == 'fail': route.abort(); return
+    if m == 'same': out = q
+    elif m == 'quota': route.fulfill(status=200, headers=CORS, body=json.dumps({'responseData': {'translatedText': 'MYMEMORY WARNING: YOU USED ALL AVAILABLE FREE TRANSLATIONS FOR TODAY. NEXT AVAILABLE IN  23 HOURS 10 MINUTES'}, 'responseStatus': 429})); return
+    else: out = 'MM:' + q
+    route.fulfill(status=200, headers=CORS, body=json.dumps({'responseData': {'translatedText': out}, 'responseStatus': 200}))
+def release_held():
+    while held:
+        r, q = held.pop(0)
+        try: r.fulfill(status=200, headers=CORS, body=json.dumps({'responseData': {'translatedText': 'MM:' + q}, 'responseStatus': 200}))
+        except Exception: pass
+def google(route):
+    if mode['google'] == 'ok': route.fulfill(status=200, headers=CORS, body=json.dumps([['GG:ok', 'iw']]))
+    elif mode['google'] == 'hold': held.append((route, 'g'))
+    else: route.abort()
+def lingva(route):
+    if mode['lingva'] == 'ok': route.fulfill(status=200, headers=CORS, body=json.dumps({'translation': 'LG:ok'}))
+    elif mode['lingva'] == 'hold': held.append((route, 'l'))
+    else: route.abort()
+
+def new_page(b, init_extra=''):
+    ctx = b.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True, service_workers='block')
+    ctx.add_init_script(init_extra + MOCK)
+    page = ctx.new_page()
+    errs = []; page.on('pageerror', lambda e: errs.append(str(e)))
+    page.on('dialog', lambda d: d.accept())
+    page.route('https://api.mymemory.translated.net/**', mm)
+    page.route('https://clients5.google.com/**', google)
+    for h in ['https://lingva.ml/**', 'https://lingva.lunar.icu/**', 'https://translate.plausibility.cloud/**']:
+        page.route(h, lingva)
+    page.goto(URL); page.wait_for_load_state('networkidle')
+    return ctx, page, errs
+
+def reset():
+    mode.update({'mm': 'ok', 'google': 'fail', 'lingva': 'fail'}); release_held(); mm_calls.clear()
+
+with sync_playwright() as p:
+    b = p.chromium.launch(executable_path='/usr/bin/google-chrome', headless=True, args=['--no-sandbox'])
+    ctx, page, errs = new_page(b)
+    cls = lambda sel: page.get_attribute(sel, 'class')
+    tap = lambda sel: page.evaluate(f"document.querySelector('{sel}').click()")  # כפתור מאזין מהבהב, ולכן לוחצים ישירות
+
+    # 1. מיקרופון: מעבר מהיר מא׳ לב׳ לא מכבה את ב׳
+    tap('#micBtnA'); page.wait_for_timeout(40); tap('#micBtnB'); page.wait_for_timeout(300)
+    ok('mic A->B: B keeps listening', 'mic-listening' in cls('#micBtnB'))
+    page.evaluate("window.__say('hello there')"); page.wait_for_timeout(200)
+    ok('mic A->B: B speech captured', page.input_value('#inputB') == 'hello there', page.input_value('#inputB'))
+    # עצירה ולחיצה חוזרת מהירה
+    tap('#micBtnA'); page.wait_for_timeout(40); tap('#micBtnA'); page.wait_for_timeout(20); tap('#micBtnA'); page.wait_for_timeout(300)
+    ok('mic stop + quick re-tap: still listening', 'mic-listening' in cls('#micBtnA'))
+    tap('#micBtnA'); page.wait_for_timeout(200)
+
+    # 2. תשובה ישנה לא דורסת משפט מהיר
+    reset(); mode['mm'] = 'hold'
+    page.fill('#inputA', 'משפט ארוך שמחכה לרשת'); page.click('#sendBtnA'); page.wait_for_timeout(100)
+    page.click('#quickPhrasesGrid button >> nth=0'); page.wait_for_timeout(150)
+    release_held(); page.wait_for_timeout(300)
+    ok('stale network reply does not overwrite quick phrase', page.inner_text('#outputA') == 'Hello', page.inner_text('#outputA'))
+
+    # 3. אחרי כשל: "הגדל" לא מציג משפט קודם
+    reset(); mode['mm'] = 'fail'
+    page.fill('#inputA', 'משפט שייכשל בתרגום'); page.click('#sendBtnA')
+    page.wait_for_function("document.getElementById('outputA').textContent === 'שגיאה בתרגום.'")
+    page.click('#bigTextBtnA'); page.wait_for_timeout(150)
+    ok('after failure, big text does not show the previous sentence', not page.is_visible('#bigTextModal') and 'אין עדיין תרגום' in page.inner_text('#statusBannerText'))
+
+    # 4. הקראה אוטומטית לא מתחילה כשהמיקרופון פתוח
+    reset(); mode['mm'] = 'hold'; page.evaluate('window.__spoken=[]')
+    page.fill('#inputA', 'איפה התחנה הקרובה'); page.press('#inputA', 'Enter'); page.wait_for_timeout(100)
+    tap('#micBtnB'); page.wait_for_timeout(100)
+    release_held(); page.wait_for_timeout(300)
+    spoken = [s for s in page.evaluate('window.__spoken') if s['text'].strip()]
+    ok('no auto-speak into an open mic', page.inner_text('#outputA') == 'MM:איפה התחנה הקרובה' and not any(s['mic'] for s in spoken), str(spoken))
+    tap('#micBtnB'); page.wait_for_timeout(200)
+
+    # 5. טקסט ארוך מחולק לחלקים של עד 450 בתים
+    reset()
+    sent = 'זה משפט ארוך מאוד שנועד לבדוק את החלוקה של טקסט לחלקים קטנים לפני שליחה לשירות התרגום. '
+    page.fill('#inputA', (sent * 7).strip()); page.click('#sendBtnA')
+    page.wait_for_function("document.getElementById('outputA').textContent.startsWith('MM:')", timeout=15000)
+    qs = [urllib.parse.parse_qs(urllib.parse.urlparse(u).query)['q'][0] for u in mm_calls]
+    ok('long text split into chunks <= 450 bytes', len(qs) >= 2 and all(len(q.encode()) <= 450 for q in qs), f'{len(qs)} chunks, max {max(len(q.encode()) for q in qs)} bytes')
+
+    # 6. כשהכל תקוע: הודעה תוך כ-12 שניות, ובדרך "מנסה שירות גיבוי"
+    reset(); mode.update({'mm': 'hold', 'google': 'hold', 'lingva': 'hold'})
+    page.click('#dismissBannerBtn') if page.is_visible('#dismissBannerBtn') else None
+    t0 = time.time()
+    page.fill('#inputA', 'משפט כשהרשת תקועה לגמרי'); page.click('#sendBtnA')
+    page.wait_for_function("document.getElementById('outputA').textContent.includes('גיבוי')", timeout=9000)
+    t_backup = time.time() - t0
+    page.wait_for_function("document.getElementById('statusBannerText').textContent.includes('יותר מדי זמן')", timeout=16000)
+    dt = time.time() - t0
+    ok('stuck network: backup notice, then error within ~12s', 5 < t_backup < 8 and dt < 13.5, f'backup at {t_backup:.1f}s, error at {dt:.1f}s')
+    reset()
+
+    # 7. MyMemory מחזיר את המקור בלי שינוי: מנסים גיבוי
+    mode.update({'mm': 'same', 'google': 'ok'})
+    page.fill('#inputA', 'משפט שחוזר בלי תרגום'); page.click('#sendBtnA')
+    page.wait_for_function("document.getElementById('outputA').textContent === 'GG:ok'", timeout=8000)
+    ok('unchanged MyMemory result falls back to backup', True)
+    reset()
+
+    # 8. מילה "invalid" בתרגום אמיתי לא נזרקת
+    page.route('https://api.mymemory.translated.net/**', lambda r: r.fulfill(status=200, headers=CORS, body=json.dumps({'responseData': {'translatedText': 'My ticket is invalid'}, 'responseStatus': 200})))
+    page.fill('#inputA', 'הכרטיס שלי לא תקף'); page.click('#sendBtnA'); page.wait_for_timeout(400)
+    ok('translation containing "invalid" kept', page.inner_text('#outputA') == 'My ticket is invalid')
+    page.unroute('https://api.mymemory.translated.net/**'); page.route('https://api.mymemory.translated.net/**', mm)
+
+    # 9. מכסה נגמרה: MyMemory מושהה, ואימייל חדש מחזיר אותו
+    reset(); mode.update({'mm': 'quota', 'google': 'ok'})
+    page.fill('#inputA', 'בדיקת מכסה ראשונה'); page.click('#sendBtnA')
+    page.wait_for_function("document.getElementById('outputA').textContent === 'GG:ok'", timeout=8000)
+    skip = page.evaluate("JSON.parse(localStorage.getItem('tvt_mm_skip'))")
+    ok('quota: pause at most 1 hour', skip and 0 < skip['until'] - time.time() * 1000 <= 3600 * 1000 + 5000)
+    n = len(mm_calls); mode['mm'] = 'ok'
+    page.evaluate("localStorage.setItem('tvt_email','meni@example.com')")
+    page.fill('#inputA', 'בדיקת מכסה עם אימייל'); page.click('#sendBtnA'); page.wait_for_timeout(500)
+    ok('quota pause is per email', len(mm_calls) == n + 1 and page.inner_text('#outputA').startswith('MM:'))
+    page.evaluate("localStorage.removeItem('tvt_email'); localStorage.removeItem('tvt_mm_skip')")
+    reset()
+
+    # 10. "בדוק משמעות"
+    page.fill('#inputA', 'בוקר טוב לכולם'); page.click('#sendBtnA'); page.wait_for_timeout(400)
+    page.click('#checkBtnA'); page.wait_for_timeout(400)
+    ok('check meaning shows back-translation', 'בחזרה לעברית' in page.inner_text('#backA') and 'MM:' in page.inner_text('#backA'), page.inner_text('#backA'))
+
+    # 11. העתקה כפולה לא נתקעת
+    ctx.grant_permissions(['clipboard-read', 'clipboard-write'])
+    page.click('#copyBtnA'); page.wait_for_timeout(100); page.click('#copyBtnA'); page.wait_for_timeout(1700)
+    ok('copy button returns to its label', page.inner_text('#copyBtnA') == 'העתק', page.inner_text('#copyBtnA'))
+
+    # 12. היסטוריה ומועדפים נשמרים, ומועדף עובד בלי רשת
+    n_hist = page.locator('#historyList > div').count()
+    page.locator('#historyList > div >> nth=0').locator('button >> nth=0').click()
+    ok('star adds a favorite chip', page.is_visible('#favWrap') and page.locator('#favPhrases button').count() == 2)
+    page.reload(); page.wait_for_load_state('networkidle')
+    ok('history persists after reload', page.locator('#historyList > div').count() == n_hist, f'{n_hist}')
+    ok('favorites persist after reload', page.locator('#favPhrases button').count() == 2)
+    mode['mm'] = 'fail'; n = len(mm_calls)
+    page.locator('#favPhrases button >> nth=0').click(); page.wait_for_timeout(300)
+    ok('favorite shows stored translation without network', page.inner_text('#outputA') == 'MM:בוקר טוב לכולם' and len(mm_calls) == n, page.inner_text('#outputA'))
+    reset()
+
+    # 13. תצוגה גדולה: נגללת, הכפתורים נראים, Escape ו"חזור" סוגרים
+    long_text = 'This is a long sentence for the driver to read. ' * 40
+    page.route('https://api.mymemory.translated.net/**', lambda r: r.fulfill(status=200, headers=CORS, body=json.dumps({'responseData': {'translatedText': long_text}, 'responseStatus': 200})))
+    page.fill('#inputA', 'משפט שהתרגום שלו ארוך מאוד'); page.click('#sendBtnA'); page.wait_for_timeout(400)
+    page.click('#bigTextBtnA'); page.wait_for_timeout(150)
+    box = page.locator('#bigTextCloseBtn').bounding_box()
+    ok('big text: close button on screen with long text', box and box['y'] + box['height'] <= 844, str(box))
+    ok('big text: long text scrolls and its start is not cut off', page.evaluate("(()=>{const m=document.getElementById('bigTextModal');const t=document.getElementById('bigTextLangLabel').getBoundingClientRect();return m.scrollHeight>m.clientHeight && t.top>=0})()"))
+    page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    ok('big text: Escape closes', not page.is_visible('#bigTextModal'))
+    page.click('#bigTextBtnA'); page.wait_for_timeout(100)
+    page.go_back(); page.wait_for_timeout(300)
+    ok('big text: Android back closes it and stays in the app', not page.is_visible('#bigTextModal') and 'index.html' in page.url)
+    page.unroute('https://api.mymemory.translated.net/**'); page.route('https://api.mymemory.translated.net/**', mm)
+
+    # 14. אימייל לא תקין לא נראה "נשמר" בפתיחה הבאה
+    page.click('#settingsBtn'); page.fill('#optEmail', 'meni@example.com'); page.fill('#optEmail', 'meni.cohen@gm')
+    page.click('#closeSettings'); page.click('#settingsBtn')
+    ok('settings shows the email that is really saved', page.input_value('#optEmail') == 'meni@example.com' and 'נשמר' in page.inner_text('#emailStatus'))
+    ok('voice rows have a play button per language', page.locator('#voiceInfo button').count() >= 6)
+    page.click('#closeSettings')
+
+    # 15. פנים-אל-פנים בתאית: הצד של ב׳ בשפה שלו
+    page.select_option('#langB', 'th'); page.click('#flipModeBtn'); page.wait_for_timeout(200)
+    ok('face-to-face Thai: B side in Thai', page.inner_text('#micLabelB') == 'กดแล้วพูด' and 'คำแปลสำหรับคุณ' in page.inner_text('#targetTagA') and page.get_attribute('#panelB', 'dir') == 'ltr')
+    page.click('#quickPhrasesGrid button >> nth=0'); page.wait_for_timeout(200)
+    page.click('#bigTextBtnA'); page.wait_for_timeout(100)
+    ok('face-to-face: big text for B opens rotated toward B', 'face-to-face-flip' in cls('#bigTextModal'))
+    page.click('#bigTextCloseBtn'); page.click('#flipModeBtn'); page.select_option('#langB', 'en')
+
+    # 16. אזור לחיצה מוגדל: נגיעה 10px מעל "הגדל" עדיין פוגעת בו
+    hit = page.evaluate("""(()=>{const b=document.getElementById('bigTextBtnA');b.scrollIntoView({block:'center'});const r=b.getBoundingClientRect();
+      const e=document.elementFromPoint(r.left+r.width/2, r.top-10);return e===b;})()""")
+    ok('enlarged tap area on small buttons', hit)
+
+    # 17. מלון בלי רשת לשפה בלי תבנית: אנגלית + שם המלון
+    mode['mm'] = 'fail'
+    page.select_option('#langB', 'ja'); page.fill('#hotelInput', 'Hotel Gracery')
+    page.click('#hotelGoBtn'); page.wait_for_timeout(400)
+    ok('hotel without network for Japanese: English + hotel name', page.inner_text('#bigTextContent') == 'Please take me to this address: Hotel Gracery', page.inner_text('#bigTextContent'))
+    page.click('#bigTextCloseBtn'); page.select_option('#langB', 'en'); reset()
+    ok('no JS errors (main page)', not errs, str(errs))
+    ctx.close()
+
+    # 18. אחסון פגום לא מפיל את האפליקציה
+    bad = """try{localStorage.setItem('tvt_cache_v2','null');localStorage.setItem('tvt_langA','__proto__');
+      localStorage.setItem('tvt_history','{"x":1}');localStorage.setItem('tvt_favs','[1,null,{"a":2}]');}catch(e){}"""
+    ctx2, page2, errs2 = new_page(b, bad)
+    page2.fill('#inputA', 'בדיקה עם אחסון פגום'); page2.click('#sendBtnA'); page2.wait_for_timeout(400)
+    ok('corrupted storage: app works', page2.locator('#quickPhrasesGrid button').count() == 12 and page2.inner_text('#outputA').startswith('MM:') and not errs2, str(errs2))
+    ctx2.close()
+
+    # 19. קול עברית שמדווח כ-iw-IL
+    ctx3, page3, _ = new_page(b, "window.__voices=[{lang:'iw-IL'},{lang:'en-US'}];")
+    page3.click('#settingsBtn')
+    ok('Hebrew voice reported as iw-IL is recognized', 'עברית: ✓' in page3.inner_text('#voiceInfo'))
+    ctx3.close()
+    b.close()
+
+fails = [r[0] for r in results if not r[1]]
+print(f'\n{len(results) - len(fails)}/{len(results)} passed. FAILED:', fails)
+sys.exit(1 if fails else 0)

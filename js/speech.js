@@ -13,12 +13,14 @@ if (synth) {
   if (synth.addEventListener) synth.addEventListener('voiceschanged', refreshVoices);
 }
 
-const normLang = v => v.lang.toLowerCase().replace('_', '-');
+// חלק מהמכשירים מדווחים על עברית כ-iw ולא he
+const normCode = c => String(c || '').toLowerCase().replace(/_/g, '-').replace(/^iw(?=-|$)/, 'he');
+const normLang = v => normCode(v.lang);
 
 // קול שמתאים לשפה: קודם התאמה מלאה (he-IL), ואחרת לפי קידומת (he)
 export function findVoice(langKey) {
   refreshVoices();
-  const code = LANGUAGES[langKey].ttsCode.toLowerCase();
+  const code = normCode(LANGUAGES[langKey].ttsCode);
   const prefix = code.split('-')[0];
   return voices.find(v => normLang(v) === code) ||
          voices.find(v => normLang(v).split('-')[0] === prefix) || null;
@@ -42,9 +44,13 @@ export function unlockAudio() {
 
 let keepAlive = null;
 const live = new Set(); // מונע איסוף זבל של ה-utterance ב-Chrome
+let speakGen = 0;       // עולה בכל הקראה חדשה או עצירה. הקראה ישנה שממתינה לא תתחיל.
+
+export function isSpeaking() { try { return !!(synth && (synth.speaking || synth.pending)); } catch { return false; } }
 
 export function speak(text, langKey, { onStart, onEnd, onError } = {}) {
   if (!synth || !text) { if (onError) onError('unsupported'); return; }
+  const my = ++speakGen;
   try {
     synth.cancel();
     const u = new SpeechSynthesisUtterance(text);
@@ -54,13 +60,13 @@ export function speak(text, langKey, { onStart, onEnd, onError } = {}) {
     const v = findVoice(langKey);
     if (v) u.voice = v;
     live.add(u);
-    const done = () => { live.delete(u); clearInterval(keepAlive); keepAlive = null; };
+    const done = () => { live.delete(u); if (my === speakGen) { clearInterval(keepAlive); keepAlive = null; } };
     u.onstart = () => { if (onStart) onStart(); };
-    u.onend = () => { done(); if (onEnd) onEnd(); };
+    // onEnd נקרא רק כשההקראה הסתיימה באמת, לא כשנעצרה או הוחלפה בהקראה אחרת
+    u.onend = () => { done(); if (onEnd && my === speakGen) onEnd(); };
     u.onerror = e => {
       done();
-      if (e.error && e.error !== 'interrupted' && e.error !== 'canceled') { if (onError) onError(e.error); }
-      else if (onEnd) onEnd();
+      if (e.error && e.error !== 'interrupted' && e.error !== 'canceled' && onError) onError(e.error);
     };
     // Chrome במחשב מפסיק הקראה ארוכה אחרי כ-15 שניות. pause/resume מעיר אותו.
     // באנדרואיד pause לא נתמך ועלול לעצור את ההקראה, ולכן לא משתמשים בו שם.
@@ -71,11 +77,11 @@ export function speak(text, langKey, { onStart, onEnd, onError } = {}) {
         synth.pause(); synth.resume();
       }, 10000);
     }
-    setTimeout(() => { synth.resume(); synth.speak(u); }, 60);
+    setTimeout(() => { if (my !== speakGen) { live.delete(u); return; } synth.resume(); synth.speak(u); }, 60);
   } catch (e) { if (onError) onError(String(e)); }
 }
 
-export function stopSpeaking() { try { if (synth) synth.cancel(); } catch { /* ignore */ } }
+export function stopSpeaking() { speakGen++; try { if (synth) synth.cancel(); } catch { /* ignore */ } }
 
 /**
  * מאזין פעם אחת.

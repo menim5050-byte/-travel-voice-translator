@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>מתורגמן קולי דו-כיווני | עברית · אנגלית · רומנית · ערבית · תאילנדית · רוסית</title>
   <meta name="description" content="מתורגמן קולי דו-כיווני לטיולים, 22 שפות" />
+  <meta name="robots" content="noindex" />
   <meta name="theme-color" content="#020617" />
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icons/icon-192.png" />
@@ -12,7 +13,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="מתורגמן" />
-  <link rel="stylesheet" href="css/styles.css" />
+  <link rel="stylesheet" href="css/styles.css?v=4257141ba3" />
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
 
@@ -23,7 +24,7 @@
         <span class="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-indigo-600 text-white text-lg shadow-sm" aria-hidden="true">🎙️</span>
         <div>
           <h1 class="text-base sm:text-lg font-bold text-white leading-tight">מתורגמן קולי לשיחה בין 2 אנשים</h1>
-          <p class="text-xs text-slate-400">עברית · אנגלית · רומנית · ערבית · תאילנדית · רוסית</p>
+          <p id="appSubtitle" class="text-xs text-slate-400">עברית · אנגלית · רומנית · ערבית · תאילנדית · רוסית</p>
         </div>
       </div>
 
@@ -38,17 +39,17 @@
           <span id="flipModeLabel">מצב פנים-אל-פנים: כבוי</span>
         </button>
 
-        <button id="testAudioBtn" type="button" class="inline-flex items-center gap-1.5 text-xs sm:text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition">
+        <button id="testAudioBtn" type="button" class="f2f-hide inline-flex items-center gap-1.5 text-xs sm:text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition">
           <span aria-hidden="true">🔊</span>
           <span>בדיקת שמע</span>
         </button>
 
-        <button id="settingsBtn" type="button" class="inline-flex items-center gap-1.5 text-xs sm:text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition" aria-label="הגדרות">
+        <button id="settingsBtn" type="button" class="f2f-hide inline-flex items-center gap-1.5 text-xs sm:text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition" aria-label="הגדרות">
           <span aria-hidden="true">⚙️</span>
           <span>הגדרות</span>
         </button>
 
-        <button id="swapLangsBtn" type="button" class="inline-flex items-center gap-1.5 text-xs sm:text-sm bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 px-3 py-1.5 rounded-lg border border-indigo-500/40 transition">
+        <button id="swapLangsBtn" type="button" class="f2f-hide inline-flex items-center gap-1.5 text-xs sm:text-sm bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 px-3 py-1.5 rounded-lg border border-indigo-500/40 transition">
           <span aria-hidden="true">⇄</span>
           <span>החלף שפות</span>
         </button>
@@ -57,10 +58,13 @@
   </header>
 
   <!-- Browser Compatibility / Status Toast -->
-  <div id="statusBanner" class="hidden max-w-6xl w-full mx-auto px-4 pt-3">
-    <div id="statusBannerBox" class="rounded-xl px-4 py-2.5 text-xs sm:text-sm flex items-center justify-between gap-3 border">
+  <div id="statusBanner" role="status" aria-live="polite" class="hidden fixed inset-x-0 bottom-0 z-[60] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pointer-events-none">
+    <div id="statusBannerBox" class="max-w-xl mx-auto rounded-xl px-4 py-2.5 text-xs sm:text-sm flex items-center justify-between gap-3 border shadow-2xl pointer-events-auto">
       <span id="statusBannerText"></span>
-      <button id="dismissBannerBtn" type="button" class="text-xs underline opacity-80 hover:opacity-100 shrink-0">סגור</button>
+      <div class="flex items-center gap-3 shrink-0">
+        <button id="bannerActionBtn" type="button" class="hidden hit px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 font-semibold"></button>
+        <button id="dismissBannerBtn" type="button" class="hit text-xs underline opacity-80 hover:opacity-100">סגור</button>
+      </div>
     </div>
   </div>
 
@@ -68,7 +72,7 @@
   <main class="max-w-6xl w-full mx-auto px-4 py-4 flex-1 flex flex-col gap-4">
 
     <!-- 2-Step Turn Switcher -->
-    <section class="bg-slate-900 border border-slate-800 rounded-2xl p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3 shadow-md">
+    <section id="turnSection" class="f2f-hide bg-slate-900 border border-slate-800 rounded-2xl p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3 shadow-md">
       <div class="flex items-center gap-2 flex-wrap">
         <button id="turnStep1Btn" type="button" class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-sky-600 text-white shadow transition">
           שלב 1: אני מדבר (דובר א׳)
@@ -90,14 +94,14 @@
     </section>
 
     <!-- Two Speaker Panels -->
-    <section class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <section id="panelsSection" class="grid grid-cols-1 md:grid-cols-2 gap-4">
 
       <!-- Speaker A -->
       <article id="panelA" class="bg-slate-900 border-2 border-sky-500/80 rounded-2xl p-4 sm:p-5 flex flex-col gap-3.5 shadow-lg transition">
         <div class="flex items-center justify-between gap-2">
           <div class="flex items-center gap-2">
             <span class="w-3 h-3 rounded-full bg-sky-400"></span>
-            <h2 class="font-semibold text-base text-white">דובר א׳</h2>
+            <h2 id="titleA" class="font-semibold text-base text-white">דובר א׳</h2>
           </div>
           <select id="langA" aria-label="שפת דובר א׳" class="bg-slate-800 border border-slate-700 text-slate-100 text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sky-500">
             <option value="he" selected>🇮🇱 עברית (עברית)</option>
@@ -141,7 +145,7 @@
         <!-- Text Input Fallback / Edit -->
         <div class="flex flex-col gap-2">
           <div class="flex gap-2">
-            <textarea id="inputA" rows="2" placeholder="הדיבור יופיע כאן, או הקלד טקסט לתרגום..." class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 resize-none"></textarea>
+            <textarea id="inputA" rows="2" aria-label="טקסט של דובר א׳" placeholder="הדיבור יופיע כאן, או הקלד טקסט לתרגום..." class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 resize-none"></textarea>
             <button id="sendBtnA" type="button" class="px-4 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold text-sm shrink-0 transition shadow">
               🔊 תרגם והשמע
             </button>
@@ -150,15 +154,20 @@
         </div>
 
         <!-- Latest Translation Result for Speaker A -> B -->
-        <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 flex flex-col gap-1.5 min-h-[5.5rem]">
-          <div class="flex items-center justify-between text-xs text-slate-400">
+        <div id="outBoxA" class="out-box scroll-mt-40 bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 flex flex-col gap-1.5 min-h-[5.5rem]">
+          <div class="flex items-center justify-between gap-2 text-xs text-slate-400">
             <span id="targetTagA">תרגום עבור דובר ב׳:</span>
-            <div class="flex items-center gap-3">
-              <button id="bigTextBtnA" type="button" class="hover:text-white transition">⛶ הגדל</button>
-              <button id="copyBtnA" type="button" class="hover:text-white transition">העתק</button>
+            <div class="flex items-center gap-3 shrink-0">
+              <button id="bigTextBtnA" type="button" class="hit hover:text-white transition">⛶ הגדל</button>
+              <button id="copyBtnA" type="button" class="hit hover:text-white transition">העתק</button>
             </div>
           </div>
-          <p id="outputA" class="text-base sm:text-lg font-medium text-emerald-300 leading-relaxed break-words">ממתין לדיבור או טקסט...</p>
+          <p id="outputA" aria-live="polite" class="text-base sm:text-lg font-medium text-emerald-300 leading-relaxed break-words">ממתין לדיבור או טקסט...</p>
+          <p id="backA" class="hidden text-xs text-slate-400 leading-relaxed"></p>
+          <div class="f2f-hide flex items-center justify-end gap-4 text-xs text-slate-400">
+            <button id="checkBtnA" type="button" class="hit hover:text-white transition" title="מתרגם את התוצאה חזרה כדי לבדוק שהמשמעות נכונה">↩ בדוק משמעות</button>
+            <button id="shareBtnA" type="button" class="hidden hit hover:text-white transition">↗ שתף</button>
+          </div>
         </div>
       </article>
 
@@ -167,7 +176,7 @@
         <div class="flex items-center justify-between gap-2">
           <div class="flex items-center gap-2">
             <span class="w-3 h-3 rounded-full bg-emerald-400"></span>
-            <h2 class="font-semibold text-base text-white">דובר ב׳</h2>
+            <h2 id="titleB" class="font-semibold text-base text-white">דובר ב׳</h2>
           </div>
           <select id="langB" aria-label="שפת דובר ב׳" class="bg-slate-800 border border-slate-700 text-slate-100 text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500">
             <option value="he">🇮🇱 עברית (עברית)</option>
@@ -211,7 +220,7 @@
         <!-- Text Input Fallback / Edit -->
         <div class="flex flex-col gap-2">
           <div class="flex gap-2">
-            <textarea id="inputB" rows="2" placeholder="הדיבור יופיע כאן, או הקלד טקסט לתרגום..." class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"></textarea>
+            <textarea id="inputB" rows="2" aria-label="טקסט של דובר ב׳" placeholder="הדיבור יופיע כאן, או הקלד טקסט לתרגום..." class="w-full bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"></textarea>
             <button id="sendBtnB" type="button" class="px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm shrink-0 transition shadow">
               🔊 תרגם והשמע
             </button>
@@ -220,64 +229,76 @@
         </div>
 
         <!-- Latest Translation Result for Speaker B -> A -->
-        <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 flex flex-col gap-1.5 min-h-[5.5rem]">
-          <div class="flex items-center justify-between text-xs text-slate-400">
+        <div id="outBoxB" class="out-box scroll-mt-40 bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 flex flex-col gap-1.5 min-h-[5.5rem]">
+          <div class="flex items-center justify-between gap-2 text-xs text-slate-400">
             <span id="targetTagB">תרגום עבור דובר א׳:</span>
-            <div class="flex items-center gap-3">
-              <button id="bigTextBtnB" type="button" class="hover:text-white transition">⛶ הגדל</button>
-              <button id="copyBtnB" type="button" class="hover:text-white transition">העתק</button>
+            <div class="flex items-center gap-3 shrink-0">
+              <button id="bigTextBtnB" type="button" class="hit hover:text-white transition">⛶ הגדל</button>
+              <button id="copyBtnB" type="button" class="hit hover:text-white transition">העתק</button>
             </div>
           </div>
-          <p id="outputB" class="text-base sm:text-lg font-medium text-sky-300 leading-relaxed break-words">ממתין לדיבור או טקסט...</p>
+          <p id="outputB" aria-live="polite" class="text-base sm:text-lg font-medium text-sky-300 leading-relaxed break-words">ממתין לדיבור או טקסט...</p>
+          <p id="backB" class="hidden text-xs text-slate-400 leading-relaxed"></p>
+          <div class="f2f-hide flex items-center justify-end gap-4 text-xs text-slate-400">
+            <button id="checkBtnB" type="button" class="hit hover:text-white transition" title="מתרגם את התוצאה חזרה כדי לבדוק שהמשמעות נכונה">↩ בדוק משמעות</button>
+            <button id="shareBtnB" type="button" class="hidden hit hover:text-white transition">↗ שתף</button>
+          </div>
         </div>
       </article>
 
     </section>
 
     <!-- Quick Phrases Bar -->
-    <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+    <section id="phrasesSection" class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
       <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
         <h3 class="text-sm font-semibold text-slate-200">משפטים מהירים (לחיצה תתרגם ותקריא מיד)</h3>
         <div class="flex items-center gap-2 text-xs text-slate-400">
           <span>שלח בתור:</span>
-          <button id="phraseActorA" type="button" class="px-2.5 py-1 rounded-lg bg-sky-600 text-white font-medium">דובר א׳</button>
-          <button id="phraseActorB" type="button" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700">דובר ב׳</button>
+          <button id="phraseActorA" type="button" class="px-3 py-1.5 rounded-lg bg-sky-600 text-white font-medium">דובר א׳</button>
+          <button id="phraseActorB" type="button" class="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700">דובר ב׳</button>
         </div>
       </div>
+      <div id="favWrap" class="hidden mb-3 flex flex-col gap-2">
+        <p class="text-xs text-amber-300">⭐ המועדפים שלי (עובדים גם בלי אינטרנט)</p>
+        <div id="favPhrases" class="flex flex-wrap gap-2"></div>
+      </div>
       <div id="quickPhrasesGrid" class="flex flex-wrap gap-2"></div>
-      <button id="moreToggleBtn" type="button" aria-expanded="false" class="mt-3 text-xs text-indigo-300 hover:text-indigo-200 transition">עוד משפטים ▾</button>
+      <button id="moreToggleBtn" type="button" aria-expanded="false" class="hit mt-3 text-xs text-indigo-300 hover:text-indigo-200 transition">עוד משפטים ▾</button>
       <div id="morePhrases" class="hidden mt-3 flex flex-col gap-3"></div>
       <div class="mt-3 pt-3 border-t border-slate-800 flex flex-wrap items-center gap-2">
         <span class="text-xs text-slate-400 shrink-0">🏨 המלון שלי:</span>
-        <input id="hotelInput" type="text" placeholder="הקלד שם מלון או כתובת (יישמר אוטומטית)..." class="flex-1 min-w-[180px] bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-1.5 text-xs sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-        <button id="hotelGoBtn" type="button" class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-semibold transition shadow shrink-0">
+        <input id="hotelInput" type="text" aria-label="שם המלון או הכתובת" placeholder="הקלד שם מלון או כתובת (יישמר אוטומטית)..." class="flex-1 min-w-[180px] bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        <button id="hotelGoBtn" type="button" class="px-3.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-semibold transition shadow shrink-0">
           🚕 קח אותי למלון
         </button>
-        <button id="hotelMapBtn" type="button" title="פתח ב-Google Maps" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs sm:text-sm font-medium transition shrink-0">
+        <button id="hotelMapBtn" type="button" title="פתח ב-Google Maps" class="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs sm:text-sm font-medium transition shrink-0">
           📍 מפות
         </button>
       </div>
     </section>
 
     <!-- Conversation History -->
-    <section class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex-1 flex flex-col gap-3">
+    <section id="historySection" class="f2f-hide bg-slate-900 border border-slate-800 rounded-2xl p-4 flex-1 flex flex-col gap-3">
       <div class="flex items-center justify-between">
         <h3 class="text-sm font-semibold text-slate-200">היסטוריית שיחה</h3>
-        <button id="clearHistoryBtn" type="button" class="text-xs text-slate-400 hover:text-rose-400 transition">נקה היסטוריה</button>
+        <button id="clearHistoryBtn" type="button" class="hit text-xs text-slate-400 hover:text-rose-400 transition">נקה היסטוריה</button>
       </div>
       <div id="historyList" class="flex flex-col gap-2.5 max-h-72 overflow-y-auto pr-1">
-        <p id="emptyHistoryMsg" class="text-xs text-slate-500 text-center py-6">עדיין אין הודעות בשיחה. לחץ על המיקרופון או בחר משפט מהיר כדי להתחיל.</p>
+        <p id="emptyHistoryMsg" class="text-xs text-slate-400 text-center py-6">עדיין אין הודעות בשיחה. לחץ על המיקרופון או בחר משפט מהיר כדי להתחיל.</p>
       </div>
     </section>
 
   </main>
 
   <!-- Fullscreen Big-Text Modal -->
-  <div id="bigTextModal" class="hidden fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center">
-    <div class="max-w-3xl w-full flex flex-col items-center gap-6">
+  <div id="bigTextModal" role="dialog" aria-modal="true" aria-labelledby="bigTextLangLabel" class="hidden fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm flex flex-col overflow-y-auto overscroll-contain text-center">
+    <div class="max-w-3xl w-full mx-auto my-auto flex flex-col items-center gap-5 px-6 pt-8 pb-4">
       <p id="bigTextLangLabel" class="text-sm text-slate-400"></p>
       <p id="bigTextContent" class="text-3xl sm:text-5xl font-bold text-white leading-snug break-words w-full"></p>
-      <div class="flex items-center gap-3 mt-2">
+      <p id="bigTextOriginal" class="text-sm text-slate-400 break-words w-full"></p>
+    </div>
+    <div class="sticky bottom-0 w-full bg-slate-950/95 border-t border-slate-800 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <div class="flex items-center justify-center gap-3">
         <button id="bigTextSpeakBtn" type="button" class="px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-base shadow-lg transition">
           🔊 השמע שוב
         </button>
@@ -297,7 +318,17 @@
 
       <div class="flex flex-col gap-1.5">
         <span class="text-slate-300">קולות הקראה במכשיר</span>
-        <p id="voiceInfo" class="text-xs text-slate-400 leading-relaxed"></p>
+        <div id="voiceInfo" class="text-xs text-slate-400 leading-relaxed flex flex-col gap-1.5"></div>
+        <details class="text-xs text-slate-400 leading-relaxed">
+          <summary class="cursor-pointer text-indigo-300 py-1">איך מתקינים קול לשפה חסרה (אנדרואיד)</summary>
+          <ol class="list-decimal pr-5 mt-1 flex flex-col gap-1">
+            <li>בהגדרות הטלפון חפשו "המרת טקסט לדיבור" (Text-to-speech).</li>
+            <li>בחרו במנוע של Google ולחצו על ⚙️ שלידו.</li>
+            <li>"התקנת נתוני קול" ← בחרו את השפה ← הורידו.</li>
+            <li>חזרו לכאן ולחצו על כפתור ההשמעה של השפה, כדי לשמוע שהקול נכון.</li>
+          </ol>
+          <p class="mt-1">אם שומעים קול באנגלית במקום השפה, הקול של השפה עוד לא מותקן.</p>
+        </details>
       </div>
 
       <div class="border-t border-slate-800 pt-3 flex flex-col gap-1.5">
@@ -308,17 +339,60 @@
         </div>
         <p id="emailStatus" class="text-xs min-h-[1rem]" aria-live="polite"></p>
         <p class="text-xs text-slate-400 leading-relaxed">ללא אימייל המכסה החינמית היא כ-5,000 תווים ביום, ועם אימייל כ-50,000. נשמר במכשיר בלבד ונשלח רק לשירות MyMemory.</p>
+        <p class="text-xs text-slate-500 leading-relaxed">פרטיות: הטקסט לתרגום נשלח לשירותי התרגום (MyMemory, ובגיבוי Google ו-Lingva), וזיהוי הדיבור עובר דרך Google. ההיסטוריה, המועדפים והמלון נשמרים רק בטלפון.</p>
       </div>
 
       <div class="border-t border-slate-800 pt-3 flex items-center justify-between gap-3">
-        <p id="cacheInfo" class="text-xs text-slate-400"></p>
-        <button id="clearCacheBtn" type="button" class="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700">נקה זיכרון</button>
+        <div class="flex flex-col gap-1">
+          <p id="cacheInfo" class="text-xs text-slate-400"></p>
+          <p id="offlineInfo" class="text-xs text-slate-400"></p>
+        </div>
+        <button id="clearCacheBtn" type="button" class="shrink-0 text-xs px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700">נקה זיכרון</button>
       </div>
 
       <button id="installBtn" type="button" class="hidden py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-semibold">📲 התקן כאפליקציה</button>
     </div>
   </dialog>
 
-  <script type="module" src="js/app.js"></script>
+  <!-- שומר אתחול: אם קבצים מגרסאות שונות התערבבו (למשל ברשת חלשה בזמן עדכון) והאפליקציה לא עלתה, מרעננים פעם אחת -->
+  <script>
+  (function () {
+    var KEY = 'tvt_boot_retry', done = false;
+    function reloadNow() { if (done || window.__tvtStarted) return; done = true; location.reload(); }
+    function retry() {
+      if (done || window.__tvtStarted) return;
+      try { var n = +(sessionStorage.getItem(KEY) || 0); if (n >= 2) return; sessionStorage.setItem(KEY, String(n + 1)); } catch (e) { return; }
+      reloadNow();
+    }
+    var sw = 'serviceWorker' in navigator ? navigator.serviceWorker : null;
+    // שגיאת טעינה של מודול (קובץ ישן בלי פונקציה שהקוד החדש צריך)
+    window.addEventListener('error', function (e) {
+      var m = String((e && e.message) || '');
+      if (!/export named|does not provide|module/i.test(m)) return;
+      setTimeout(function () {
+        if (!sw) { retry(); return; }
+        // אם גרסה חדשה כבר בהורדה, מחכים לה (הרענון יקרה כשהיא תשתלט). אחרת מנסים שוב.
+        sw.getRegistration().then(function (r) { if (!(r && (r.installing || r.waiting))) retry(); }, retry);
+      }, 300);
+    });
+    if (sw && sw.controller) {
+      // גרסה חדשה ושלמה השתלטה לפני שהאפליקציה עלתה: מרעננים אליה (לא נספר כניסיון)
+      sw.addEventListener('controllerchange', reloadNow);
+      setTimeout(retry, 15000);
+    }
+  })();
+  </script>
+  <!-- כתובת עם גרסה לכל קובץ, כדי שהדפדפן לעולם לא יערבב קובץ ישן עם חדש. נכתב אוטומטית ע"י tools/stamp-sw.py -->
+  <script type="importmap">
+  { "imports": {
+    "./js/app.js": "./js/app.js?v=4257141ba3",
+    "./js/languages.js": "./js/languages.js?v=4257141ba3",
+    "./js/phrasebook.js": "./js/phrasebook.js?v=4257141ba3",
+    "./js/translate.js": "./js/translate.js?v=4257141ba3",
+    "./js/speech.js": "./js/speech.js?v=4257141ba3",
+    "./js/ui-strings.js": "./js/ui-strings.js?v=4257141ba3"
+  } }
+  </script>
+  <script type="module" src="js/app.js?v=4257141ba3"></script>
 </body>
 </html>
