@@ -384,14 +384,19 @@ with sync_playwright() as p:
     def vision_route(route):
         u = route.request.url
         if u.endswith('/models'):
-            route.fulfill(status=200, headers=CORS, body='{"data":[]}'); return
+            ok_key = route.request.headers.get('authorization', '').endswith('a' * 40)
+            route.fulfill(status=200 if ok_key else 401, headers=CORS, body=json.dumps({'data': [
+                {'id': 'qwen/qwen3.8-27b', 'active': True}, {'id': 'qwen/qwen3.6-27b', 'active': True}, {'id': 'whisper-large-v3-turbo', 'active': True}]})); return
         body = json.loads(route.request.post_data or '{}')
         vis['calls'].append(body)
+        if vis['mode'] == 'gone' and body.get('model') == 'qwen/qwen3.8-27b':
+            route.fulfill(status=404, headers=CORS, body=json.dumps({'error': {'message': 'The model `qwen/qwen3.8-27b` does not exist or you do not have access to it.', 'code': 'model_not_found'}})); return
         if vis['mode'] == '401':
             route.fulfill(status=401, headers=CORS, body=json.dumps({'error': {'message': 'Invalid API Key'}})); return
         if vis['mode'] == 'nojson' and 'response_format' in body:
             route.fulfill(status=400, headers=CORS, body=json.dumps({'error': {'message': 'response_format json_object is not supported with images'}})); return
-        route.fulfill(status=200, headers=CORS, body=json.dumps({'choices': [{'message': {'content': json.dumps(VISION, ensure_ascii=False)}}]}))
+        content = '<think>reading the menu {items}</think>\n' + json.dumps(VISION, ensure_ascii=False)  # מודלים עם "חשיבה"
+        route.fulfill(status=200, headers=CORS, body=json.dumps({'choices': [{'message': {'content': content}}]}))
     fx_calls = []
     def fx_route(route):
         fx_calls.append(route.request.url)
@@ -407,7 +412,7 @@ with sync_playwright() as p:
     ok('camera: continues by itself after the key is saved, Hebrew translation shown', page5.inner_text('#camTranslation') == 'אורז מוקפץ 60 באט\nמים 20 באט', repr(page5.inner_text('#camTranslation')))
     call = vis['calls'][-1]
     img_part = call['messages'][0]['content'][1]['image_url']['url']
-    ok('camera: image resized and sent as JPEG to the vision model', call['model'] == 'meta-llama/llama-4-scout-17b-16e-instruct' and img_part.startswith('data:image/jpeg;base64,') and len(img_part) < 3.6 * 1024 * 1024 and 'Hebrew' in call['messages'][0]['content'][0]['text'])
+    ok('camera: image resized and sent as JPEG to a current vision model', call['model'] == 'qwen/qwen3.8-27b' and img_part.startswith('data:image/jpeg;base64,') and len(img_part) < 3.6 * 1024 * 1024 and 'Hebrew' in call['messages'][0]['content'][0]['text'])
     page5.wait_for_function("document.getElementById('camPriceList').children.length === 2", timeout=5000)
     prices = page5.inner_text('#camPriceList')
     ok('prices: converted to shekels (also from the ฿ symbol)', '≈ ₪6' in prices and '≈ ₪2' in prices, prices.replace('\n', ' | '))
@@ -429,6 +434,12 @@ with sync_playwright() as p:
     wait_calls(n + 2)
     page5.wait_for_function("!document.getElementById('camResult').classList.contains('hidden') && document.getElementById('camPriceList').children.length === 2", timeout=8000)
     ok('camera: falls back when JSON mode is refused; rates cached', len(vis['calls']) == n + 2 and 'response_format' not in vis['calls'][-1] and len(fx_calls) == 1)
+    # המודל הושבת (404): עוברים לבא שקיים עכשיו, בלי שהמשתמש ירגיש
+    vis['mode'] = 'gone'; n = len(vis['calls'])
+    page5.evaluate("document.getElementById('galleryInput').value = ''"); page5.set_input_files('#galleryInput', img_path)
+    wait_calls(n + 2)
+    page5.wait_for_function("!document.getElementById('camResult').classList.contains('hidden')", timeout=8000)
+    ok('camera: retired model -> switches to the next available one', [c['model'] for c in vis['calls'][n:n + 2]] == ['qwen/qwen3.8-27b', 'qwen/qwen3.6-27b'] and 'אורז מוקפץ' in page5.inner_text('#camTranslation'), str([c['model'] for c in vis['calls'][n:]]))
     vis['mode'] = '401'; n = len(vis['calls'])
     page5.evaluate("document.getElementById('galleryInput').value = ''"); page5.set_input_files('#galleryInput', img_path)
     wait_calls(n + 1)

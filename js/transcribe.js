@@ -5,6 +5,8 @@ import { LANGUAGES } from './languages.js';
 const KEY = 'tvt_groq_key';
 export const GROQ_BASE = 'https://api.groq.com/openai/v1';
 export const GROQ_MODEL = 'whisper-large-v3-turbo';
+// אם Groq תשבית את המודל הראשי, עוברים לבא ברשימה
+const WHISPER_MODELS = [GROQ_MODEL, 'whisper-large-v3'];
 
 export function getGroqKey() { try { return localStorage.getItem(KEY) || ''; } catch { return ''; } }
 export function setGroqKey(v) { try { v ? localStorage.setItem(KEY, v) : localStorage.removeItem(KEY); } catch { /* ignore */ } }
@@ -28,7 +30,7 @@ function errorFor(status, body) {
   if (status === 401 || status === 403) return { code: 'auth', text: 'מפתח Groq לא תקין. בדוק אותו בהגדרות.' };
   if (status === 429) return { code: 'limit', text: 'הגעת למגבלת השימוש החינמית של Groq. נסה שוב מאוחר יותר.' };
   if (status === 413) return { code: 'too-big', text: 'ההקלטה גדולה מדי לשליחה. נסה הקלטה קצרה יותר.' };
-  return { code: 'http', text: `שירות התמלול החזיר שגיאה (${status}). ${msg}`.trim() };
+  return { code: 'http', text: `שירות התמלול החזיר שגיאה (${status}). ${msg}`.trim().slice(0, 200) };
 }
 
 /** בודק שהמפתח עובד (ושהדפדפן יכול לפנות ל-Groq). מחזיר true או זורק שגיאה עם text בעברית. */
@@ -50,22 +52,26 @@ export async function testGroqKey(key) {
 export async function transcribe(blob, { langKey = 'auto', filename = 'recording.webm', signal } = {}) {
   const key = getGroqKey();
   if (!key) { const e = new Error('חסר מפתח Groq. הוסף אותו בהגדרות.'); e.code = 'no-key'; throw e; }
-  const form = new FormData();
-  form.append('file', blob, filename);
-  form.append('model', GROQ_MODEL);
-  form.append('response_format', 'verbose_json');
-  form.append('temperature', '0');
-  if (langKey && langKey !== 'auto') form.append('language', langKey);
-  let res;
-  try {
-    res = await fetch(`${GROQ_BASE}/audio/transcriptions`, {
-      method: 'POST', headers: { Authorization: `Bearer ${key}` }, body: form, signal, referrerPolicy: 'no-referrer'
-    });
-  } catch (err) {
-    const e = new Error(signal && signal.aborted ? 'השליחה בוטלה.' : 'אין חיבור לשירות התמלול. ההקלטה נשמרה, אפשר לנסות שוב.');
-    e.code = 'network'; throw e;
+  let res, body = '';
+  for (const model of WHISPER_MODELS) {
+    const form = new FormData();
+    form.append('file', blob, filename);
+    form.append('model', model);
+    form.append('response_format', 'verbose_json');
+    form.append('temperature', '0');
+    if (langKey && langKey !== 'auto') form.append('language', langKey);
+    try {
+      res = await fetch(`${GROQ_BASE}/audio/transcriptions`, {
+        method: 'POST', headers: { Authorization: `Bearer ${key}` }, body: form, signal, referrerPolicy: 'no-referrer'
+      });
+    } catch (err) {
+      const e = new Error(signal && signal.aborted ? 'השליחה בוטלה.' : 'אין חיבור לשירות התמלול. ההקלטה נשמרה, אפשר לנסות שוב.');
+      e.code = 'network'; throw e;
+    }
+    body = await res.text().catch(() => '');
+    const gone = res.status === 404 || (res.status === 400 && /model_not_found|decommissioned|does not exist/i.test(body));
+    if (!gone) break; // אחרת מנסים את המודל הבא
   }
-  const body = await res.text().catch(() => '');
   if (!res.ok) { const x = errorFor(res.status, body); const e = new Error(x.text); e.code = x.code; throw e; }
   let d;
   try { d = JSON.parse(body); } catch { const e = new Error('תשובה לא צפויה משירות התמלול.'); e.code = 'bad'; throw e; }

@@ -2,7 +2,46 @@
 // משתמש באותו מפתח Groq האישי שנשמר בטלפון.
 import { getGroqKey, GROQ_BASE } from './transcribe.js';
 
-export const VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
+// Groq מחליפה מודלים מדי פעם (Llama 4 Scout הושבת ב-17.7.2026). לכן לא נועלים שם אחד:
+// בודקים מול Groq אילו מודלים קיימים עכשיו, ובוחרים לפי הסדר. מודל שהחזיר "לא קיים" מדולג.
+export const VISION_CANDIDATES = [
+  'qwen/qwen3.8-27b',
+  'qwen/qwen3.6-27b',
+  'meta-models/muse-spark-open',
+  'meta-llama/llama-4-scout-17b-16e-instruct'
+];
+const MODELS_CACHE = 'tvt_groq_models';
+const MODELS_MAX_AGE = 24 * 60 * 60 * 1000;
+const badModels = new Set();
+
+async function availableModels(key, force) {
+  try {
+    const c = JSON.parse(localStorage.getItem(MODELS_CACHE) || 'null');
+    if (!force && c && Array.isArray(c.ids) && Date.now() - c.ts < MODELS_MAX_AGE) return c.ids;
+  } catch { /* ignore */ }
+  try {
+    const res = await fetch(`${GROQ_BASE}/models`, { headers: { Authorization: `Bearer ${key}` }, referrerPolicy: 'no-referrer' });
+    if (!res.ok) return null;
+    const d = await res.json();
+    const ids = (Array.isArray(d.data) ? d.data : []).filter(m => m && m.id && m.active !== false).map(m => m.id);
+    try { localStorage.setItem(MODELS_CACHE, JSON.stringify({ ids, ts: Date.now() })); } catch { /* ignore */ }
+    return ids;
+  } catch { return null; }
+}
+
+/** בוחר מודל ראייה שקיים עכשיו ב-Groq. אם אי אפשר לבדוק, מנסים לפי סדר הרשימה. */
+export async function pickVisionModel(key, force) {
+  const ids = await availableModels(key, force);
+  const usable = VISION_CANDIDATES.filter(m => !badModels.has(m));
+  if (ids && ids.length) {
+    const hit = usable.find(m => ids.includes(m));
+    if (hit) return hit;
+    const guess = ids.find(id => !badModels.has(id) && /vision|[-_]vl\b|qwen3\.\d+-\d+b/i.test(id));
+    if (guess) return guess;
+  }
+  return usable[0] || null;
+}
+export const isModelGone = e => e && (e.status === 404 || (e.status === 400 && !/response_format|json/i.test(e.detail || '') && /model_not_found|decommissioned|does not exist|no longer (available|supported)/i.test(e.detail || '')));
 
 const ENGLISH_NAME = {
   he: 'Hebrew', en: 'English', ro: 'Romanian', ar: 'Arabic', th: 'Thai', ru: 'Russian', es: 'Spanish', fr: 'French',
@@ -62,7 +101,7 @@ function promptFor(targetKey) {
 
 // מוציא JSON מתוך תשובת המודל, גם אם הוא עטף אותה בטקסט או ב-```json
 export function parseVisionReply(content) {
-  const s = String(content || '').trim();
+  const s = String(content || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
   const a = s.indexOf('{'), b = s.lastIndexOf('}');
   if (a >= 0 && b > a) {
     try {
@@ -85,18 +124,18 @@ function visionError(status, body) {
   if (status === 401 || status === 403) return { code: 'auth', text: 'מפתח Groq לא תקין. בדוק אותו בהגדרות.', msg };
   if (status === 429) return { code: 'limit', text: 'הגעת למגבלת השימוש החינמית של Groq. נסה שוב מאוחר יותר.', msg };
   if (status === 413) return { code: 'too-big', text: 'התמונה גדולה מדי. נסה לצלם שוב מקרוב יותר.', msg };
-  return { code: 'http', text: `שירות הקריאה החזיר שגיאה (${status}).`, msg };
+  return { code: 'http', text: `שירות הקריאה החזיר שגיאה (${status})${msg ? ': ' + msg.slice(0, 120) : ''}.`, msg };
 }
 
 /** שולח תמונה (data URL) ומחזיר { language, original, translation, prices, note }. */
 export async function readAndTranslate(dataUrl, targetKey, { signal } = {}) {
   const key = getGroqKey();
   if (!key) throw Object.assign(new Error('חסר מפתח Groq. הוסף אותו בהגדרות.'), { code: 'no-key' });
-  const call = async jsonMode => {
+  const call = async (model, jsonMode) => {
     const body = {
-      model: VISION_MODEL,
+      model,
       temperature: 0.1,
-      max_completion_tokens: 2048,
+      max_completion_tokens: 4096,
       messages: [{ role: 'user', content: [{ type: 'text', text: promptFor(targetKey) }, { type: 'image_url', image_url: { url: dataUrl } }] }]
     };
     if (jsonMode) body.response_format = { type: 'json_object' };
@@ -117,11 +156,20 @@ export async function readAndTranslate(dataUrl, targetKey, { signal } = {}) {
     const content = d && d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content;
     return parseVisionReply(content);
   };
-  try {
-    return await call(true);
-  } catch (e) {
-    // אם מצב JSON לא נתמך עם תמונות, מנסים שוב בלעדיו
-    if (e.status === 400 && /response_format|json/i.test(e.detail || '')) return call(false);
-    throw e;
+  let model = await pickVisionModel(key);
+  for (let attempt = 0; attempt < 3 && model; attempt++) {
+    try {
+      try { return await call(model, true); }
+      catch (e) {
+        // אם מצב JSON לא נתמך, מנסים שוב בלעדיו
+        if (e.status === 400 && /response_format|json/i.test(e.detail || '') && !isModelGone(e)) return await call(model, false);
+        throw e;
+      }
+    } catch (e) {
+      if (!isModelGone(e)) throw e;
+      badModels.add(model);           // המודל הושבת: עוברים לבא שקיים עכשיו
+      model = await pickVisionModel(key, true);
+    }
   }
+  throw Object.assign(new Error('אין כרגע ב-Groq מודל זמין לקריאת תמונות. נסה מאוחר יותר.'), { code: 'no-model' });
 }
