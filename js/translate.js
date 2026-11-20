@@ -30,6 +30,68 @@ const AUTO = 'auto';
 const mmCode = k => (k === AUTO ? 'Autodetect' : LANGUAGES[k].mm);
 const lingvaCode = k => (k === AUTO ? 'auto' : LANGUAGES[k].lingva);
 
+/* ---------- שרת אישי (Cloudflare Worker + Microsoft Translator) ---------- */
+// כשמוגדר, השרת הוא מנוע התרגום הראשי. אם הוא לא זמין, ממשיכים לשרשרת הרגילה בלי שהמשתמש ירגיש.
+const SERVER_KEY = 'tvt_server';
+const SERVER_TIMEOUT_MS = 6000;
+const SERVER_MAX_BYTES = 4500;
+export let lastServerError = '';
+export function getServer() {
+  try { const s = JSON.parse(localStorage.getItem(SERVER_KEY) || 'null'); return s && s.url && s.code ? s : null; } catch { return null; }
+}
+export function normalizeServerUrl(u) {
+  let v = String(u || '').trim().replace(/\/+$/, '');
+  if (v && !/^https?:\/\//i.test(v)) v = 'https://' + v;
+  return v;
+}
+export function setServer(url, code) {
+  try {
+    if (!url) localStorage.removeItem(SERVER_KEY);
+    else localStorage.setItem(SERVER_KEY, JSON.stringify({ url: normalizeServerUrl(url), code: String(code || '') }));
+  } catch { /* ignore */ }
+}
+const SERVER_ERRORS = {
+  'bad-code': 'קוד הגישה לא נכון.',
+  'server-not-configured': 'בשרת לא הוגדר קוד גישה (ACCESS_CODE, לפחות 8 תווים).',
+  'translator-not-configured': 'בשרת לא הוגדר מפתח Azure (AZURE_KEY).',
+  'azure-key': 'מפתח Azure בשרת לא תקין או לא פעיל.',
+  'azure-limit': 'הגעת למכסה של Azure. בינתיים התרגום עובר לגיבוי.'
+};
+async function serverCall(srv, path, init, ms) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  const outer = init && init.signal;
+  const onOuter = () => ctrl.abort();
+  if (outer) { if (outer.aborted) ctrl.abort(); else outer.addEventListener('abort', onOuter); }
+  try {
+    const res = await fetch(srv.url + path, {
+      ...init, signal: ctrl.signal, referrerPolicy: 'no-referrer',
+      headers: { 'Content-Type': 'application/json', 'X-Access-Code': srv.code }
+    });
+    let d = null;
+    try { d = await res.json(); } catch { /* ignore */ }
+    if (!res.ok || !d || d.ok === false) {
+      const code = (d && d.error) || ('http-' + res.status);
+      throw Object.assign(new Error(SERVER_ERRORS[code] || `השרת החזיר שגיאה (${code}).`), { code });
+    }
+    return d;
+  } finally { clearTimeout(t); if (outer) outer.removeEventListener('abort', onOuter); }
+}
+/** בודק את החיבור לשרת. מחזיר תשובת health או זורק שגיאה עם הודעה בעברית. */
+export async function testServer(srv) {
+  try { return await serverCall(srv, '/health', { method: 'GET' }, 8000); }
+  catch (e) {
+    if (e.code) throw e;
+    throw Object.assign(new Error('אין חיבור לשרת. בדוק את הכתובת ואת האינטרנט.'), { code: 'unreachable' });
+  }
+}
+async function viaServer(text, from, to, signal) {
+  const srv = getServer();
+  const d = await serverCall(srv, '/translate', { method: 'POST', body: JSON.stringify({ text, from, to }), signal }, SERVER_TIMEOUT_MS);
+  if (typeof d.text !== 'string' || !d.text.trim()) throw new Error('server: empty');
+  return tidy(d.text, text);
+}
+
 /* ---------- אימייל ---------- */
 export function getEmail() { try { return localStorage.getItem(EMAIL_KEY) || ''; } catch { return ''; } }
 export function setEmail(v) { try { v ? localStorage.setItem(EMAIL_KEY, v) : localStorage.removeItem(EMAIL_KEY); } catch { /* ignore */ } }
@@ -274,6 +336,14 @@ export async function translate(text, from, to, options = {}) {
   const finish = (out, source) => { cachePut(key, out, gen); return { text: out, source }; };
 
   try {
+    if (getServer()) {
+      try {
+        const out = await inChunks(viaServer, clean, SERVER_MAX_BYTES, from, to, ctrl.signal);
+        lastServerError = '';
+        return finish(out, 'azure');
+      } catch (e) { lastServerError = (e && e.message) || 'server error'; /* ממשיכים לשרשרת הרגילה */ }
+      if (timedOut) throw new Error(MSG_TIMEOUT);
+    }
     if (from === AUTO) {
       // שפה לא ידועה: קודם הגיבויים (Google מזהה שפה טוב), ואחר כך MyMemory עם זיהוי אוטומטי
       if (options.onBackup) { try { options.onBackup(); } catch { /* ignore */ } }

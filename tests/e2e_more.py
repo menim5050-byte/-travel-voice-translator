@@ -473,6 +473,47 @@ with sync_playwright() as p:
     ok('no JS errors (camera, prices, share)', not errs5, str(errs5))
     ctx5.close()
 
+    # 25. שרת אישי (Cloudflare + Microsoft): חיבור בהגדרות, תרגום דרכו, וגיבוי כשהוא נופל
+    srv = {'mode': 'ok', 'calls': []}
+    def server_route(route):
+        u = route.request.url; code = route.request.headers.get('x-access-code', '')
+        srv['calls'].append(u)
+        if code != 'my-secret-code-123':
+            route.fulfill(status=401, headers=CORS, body=json.dumps({'ok': False, 'error': 'bad-code'})); return
+        if u.endswith('/health'):
+            route.fulfill(status=200, headers=CORS, body=json.dumps({'ok': True, 'translator': True})); return
+        if srv['mode'] == 'down':
+            route.fulfill(status=502, headers=CORS, body=json.dumps({'ok': False, 'error': 'azure-error'})); return
+        body = json.loads(route.request.post_data or '{}')
+        route.fulfill(status=200, headers=CORS, body=json.dumps({'ok': True, 'text': 'AZ:' + body['text'], 'provider': 'azure'}))
+    reset()
+    ctx6, page6, errs6 = new_page(b)
+    page6.route('https://tvt-test.example.workers.dev/**', server_route)
+    page6.click('#settingsBtn'); page6.wait_for_selector('#settings[open]')
+    ok('server: not connected by default', 'לא מחובר' in page6.inner_text('#serverStatus'))
+    page6.fill('#optServerUrl', 'tvt-test.example.workers.dev/'); page6.fill('#optServerCode', 'wrong-code-xyz'); page6.click('#saveServerBtn')
+    page6.wait_for_function("document.getElementById('serverStatus').textContent.includes('לא נכון')", timeout=5000)
+    ok('server: wrong access code reported and not saved', page6.evaluate("localStorage.getItem('tvt_server')") is None)
+    page6.fill('#optServerCode', 'my-secret-code-123'); page6.click('#saveServerBtn')
+    page6.wait_for_function("document.getElementById('serverStatus').textContent.includes('מחובר')", timeout=5000)
+    ok('server: connected, address normalized to https', page6.input_value('#optServerUrl') == 'https://tvt-test.example.workers.dev')
+    page6.click('#closeSettings')
+    n_mm = len(mm_calls)
+    page6.fill('#inputA', 'איפה אפשר לקנות כרטיס לרכבת'); page6.click('#sendBtnA')
+    page6.wait_for_function("document.getElementById('outputA').textContent.startsWith('AZ:')", timeout=8000)
+    ok('server: translation goes through the personal server first', page6.inner_text('#outputA') == 'AZ:איפה אפשר לקנות כרטיס לרכבת' and len(mm_calls) == n_mm)
+    srv['mode'] = 'down'
+    page6.fill('#inputA', 'משפט כשהשרת לא זמין בכלל'); page6.click('#sendBtnA')
+    page6.wait_for_function("document.getElementById('outputA').textContent.startsWith('MM:')", timeout=10000)
+    ok('server: falls back to the regular chain when the server fails', len(mm_calls) == n_mm + 1)
+    page6.click('#settingsBtn'); page6.wait_for_selector('#settings[open]')
+    ok('server: settings show the last server problem', 'אבל בתרגום האחרון' in page6.inner_text('#serverStatus'), page6.inner_text('#serverStatus'))
+    page6.fill('#optServerUrl', ''); page6.click('#saveServerBtn'); page6.wait_for_timeout(200)
+    ok('server: disconnect by clearing the address', page6.evaluate("localStorage.getItem('tvt_server')") is None and 'לא מחובר' in page6.inner_text('#serverStatus'))
+    page6.click('#closeSettings')
+    ok('no JS errors (server)', not errs6, str(errs6))
+    ctx6.close()
+
     # 18. אחסון פגום לא מפיל את האפליקציה
     bad = """try{localStorage.setItem('tvt_cache_v2','null');localStorage.setItem('tvt_langA','__proto__');
       localStorage.setItem('tvt_history','{"x":1}');localStorage.setItem('tvt_favs','[1,null,{"a":2}]');}catch(e){}"""

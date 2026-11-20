@@ -13,7 +13,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="מתורגמן" />
-  <link rel="stylesheet" href="css/styles.css?v=e80c78f867" />
+  <link rel="stylesheet" href="css/styles.css?v=2179382312" />
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
 
@@ -457,6 +457,17 @@
       </div>
 
       <div class="border-t border-slate-800 pt-3 flex flex-col gap-1.5">
+        <span class="text-slate-300">שרת תרגום אישי (רשות, Microsoft Translator)</span>
+        <input id="optServerUrl" type="url" dir="ltr" autocomplete="off" spellcheck="false" aria-label="כתובת השרת" placeholder="https://xxxx.workers.dev" class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        <div class="flex gap-2">
+          <input id="optServerCode" type="password" dir="ltr" autocomplete="off" spellcheck="false" aria-label="קוד גישה לשרת" placeholder="קוד גישה" class="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          <button id="saveServerBtn" type="button" class="shrink-0 min-w-[5.5rem] px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white transition font-semibold">שמור ובדוק</button>
+        </div>
+        <p id="serverStatus" class="text-xs min-h-[1rem]" aria-live="polite"></p>
+        <p class="text-xs text-slate-400 leading-relaxed">כשמחוברים, התרגום עובר קודם דרך השרת שלך, ואם הוא לא זמין, דרך השירותים הרגילים. כדי להתנתק, מוחקים את הכתובת ולוחצים "שמור ובדוק". <a class="underline text-indigo-300" target="_blank" rel="noopener noreferrer" href="https://github.com/menim5050-byte/-travel-voice-translator/blob/main/server/README.md">מדריך חיבור</a></p>
+      </div>
+
+      <div class="border-t border-slate-800 pt-3 flex flex-col gap-1.5">
         <label for="optGroqKey" class="text-slate-300">מפתח Groq להקלטה שקטה ולצילום (חינם)</label>
         <div class="flex gap-2">
           <input id="optGroqKey" type="password" dir="ltr" autocomplete="off" spellcheck="false" placeholder="gsk_..." class="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
@@ -509,18 +520,18 @@
   <!-- כתובת עם גרסה לכל קובץ, כדי שהדפדפן לעולם לא יערבב קובץ ישן עם חדש. נכתב אוטומטית ע"י tools/stamp-sw.py -->
   <script type="importmap">
   { "imports": {
-    "./js/app.js": "./js/app.js?v=e80c78f867",
-    "./js/languages.js": "./js/languages.js?v=e80c78f867",
-    "./js/phrasebook.js": "./js/phrasebook.js?v=e80c78f867",
-    "./js/translate.js": "./js/translate.js?v=e80c78f867",
-    "./js/speech.js": "./js/speech.js?v=e80c78f867",
-    "./js/recorder.js": "./js/recorder.js?v=e80c78f867",
-    "./js/transcribe.js": "./js/transcribe.js?v=e80c78f867",
-    "./js/vision.js": "./js/vision.js?v=e80c78f867",
-    "./js/currency.js": "./js/currency.js?v=e80c78f867",
-    "./js/ui-strings.js": "./js/ui-strings.js?v=e80c78f867"
+    "./js/app.js": "./js/app.js?v=2179382312",
+    "./js/languages.js": "./js/languages.js?v=2179382312",
+    "./js/phrasebook.js": "./js/phrasebook.js?v=2179382312",
+    "./js/translate.js": "./js/translate.js?v=2179382312",
+    "./js/speech.js": "./js/speech.js?v=2179382312",
+    "./js/recorder.js": "./js/recorder.js?v=2179382312",
+    "./js/transcribe.js": "./js/transcribe.js?v=2179382312",
+    "./js/vision.js": "./js/vision.js?v=2179382312",
+    "./js/currency.js": "./js/currency.js?v=2179382312",
+    "./js/ui-strings.js": "./js/ui-strings.js?v=2179382312"
   } }
   </script>
-  <script type="module" src="js/app.js?v=e80c78f867"></script>
+  <script type="module" src="js/app.js?v=2179382312"></script>
 </body>
 </html>

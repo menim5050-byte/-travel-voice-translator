@@ -1,6 +1,6 @@
 import { LANGUAGES } from './languages.js';
 import { PHRASES, CATEGORY_LABELS, HOTEL_TEMPLATE } from './phrasebook.js';
-import { translate, getEmail, setEmail, clearCache, cacheSize, isLang } from './translate.js';
+import { translate, getEmail, setEmail, clearCache, cacheSize, isLang, getServer, setServer, testServer, normalizeServerUrl, lastServerError } from './translate.js';
 import { speak, stopSpeaking, listen, listenLoop, unlockAudio, hasVoice, voicesLoaded, speechSupport, isSpeaking } from './speech.js';
 import { panelBStrings, PANEL_B_UI } from './ui-strings.js';
 import { startRecording, recorderSupported, extFor } from './recorder.js';
@@ -222,7 +222,7 @@ function speakText(text, langKey, { auto = false } = {}) {
 }
 
 /* ---------- היסטוריה ומועדפים ---------- */
-const SRC_LABEL = { phrasebook: 'שיחון', cache: 'זיכרון', mymemory: '', google: 'גיבוי Google', lingva: 'גיבוי', same: '', favorite: 'מועדף', listen: '', camera: '' };
+const SRC_LABEL = { azure: '', phrasebook: 'שיחון', cache: 'זיכרון', mymemory: '', google: 'גיבוי Google', lingva: 'גיבוי', same: '', favorite: 'מועדף', listen: '', camera: '' };
 const AUTO_LANG = { nameHe: 'זוהתה אוטומטית', native: '', dir: 'auto', speechCode: '' };
 const langCfg = k => (isLang(k) ? LANGUAGES[k] : AUTO_LANG);
 
@@ -1611,6 +1611,36 @@ async function refreshOfflineInfo() {
   } catch { /* ignore */ }
 }
 
+const sEl = { url: $('optServerUrl'), code: $('optServerCode'), save: $('saveServerBtn'), status: $('serverStatus') };
+function setServerStatus(cls, msg) { sEl.status.className = `text-xs min-h-[1rem] ${cls}`; sEl.status.textContent = msg; }
+function showServerState() {
+  const srv = getServer();
+  sEl.url.value = srv ? srv.url : '';
+  sEl.code.value = srv ? srv.code : '';
+  if (!srv) { setServerStatus('text-slate-400', 'לא מחובר. התרגום עובר דרך השירותים הרגילים.'); return; }
+  const host = (() => { try { return new URL(srv.url).host; } catch { return srv.url; } })();
+  if (lastServerError) setServerStatus('text-amber-300', `מחובר ל-${host}, אבל בתרגום האחרון: ${lastServerError}`);
+  else setServerStatus('text-emerald-400', `מחובר ✓ ${host}`);
+}
+async function saveServer() {
+  const url = normalizeServerUrl(sEl.url.value);
+  const code = sEl.code.value.trim();
+  if (!url) { setServer(''); showServerState(); return; }
+  if (!/^https:\/\/[^\s/]+\.[^\s/]+/i.test(url)) { setServerStatus('text-amber-300', 'הכתובת צריכה להתחיל ב-https:// (למשל https://xxxx.workers.dev).'); return; }
+  if (code.length < 8) { setServerStatus('text-amber-300', 'קוד הגישה צריך להיות לפחות 8 תווים, בדיוק כמו בשרת.'); return; }
+  setServerStatus('text-slate-400', 'בודק חיבור לשרת...');
+  try {
+    const h = await testServer({ url, code });
+    setServer(url, code);
+    sEl.url.value = url;
+    setServerStatus(h.translator ? 'text-emerald-400' : 'text-amber-300',
+      h.translator ? '✓ מחובר. התרגום עובר עכשיו דרך השרת שלך (Microsoft).' : 'השרת עונה, אבל לא הוגדר בו מפתח Azure (AZURE_KEY).');
+  } catch (e) {
+    setServerStatus(e.code === 'bad-code' ? 'text-rose-300' : 'text-amber-300', `${e.message} (לא נשמר)`);
+  }
+}
+sEl.save.addEventListener('click', saveServer);
+
 const gEl = { input: $('optGroqKey'), save: $('saveGroqBtn'), status: $('groqStatus') };
 function setGroqStatus(cls, msg) { gEl.status.className = `text-xs min-h-[1rem] ${cls}`; gEl.status.textContent = msg; }
 async function saveGroq() {
@@ -1628,6 +1658,7 @@ gEl.save.addEventListener('click', saveGroq);
 gEl.input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveGroq(); } });
 
 function refreshSettingsInfo() {
+  showServerState();
   gEl.input.value = getGroqKey();
   if (getGroqKey()) setGroqStatus('text-emerald-400', 'מפתח שמור ✓'); else setGroqStatus('text-slate-400', 'לא מוגדר מפתח.');
   el.optEmail.value = getEmail(); // מציגים את מה שבאמת שמור, לא טקסט שהוקלד ולא נשמר
