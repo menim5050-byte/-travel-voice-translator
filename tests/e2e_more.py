@@ -67,7 +67,8 @@ def lingva(route):
 
 def new_page(b, init_extra=''):
     ctx = b.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True, service_workers='block')
-    ctx.add_init_script(init_extra + MOCK)
+    # התרגום ב-Groq כבוי בבדיקות הישנות (הן בודקות את MyMemory). סעיף 27 בודק אותו עם ברירת המחדל.
+    ctx.add_init_script(init_extra + "if (!window.__groqDefault && localStorage.getItem('tvt_groq_translate') === null) localStorage.setItem('tvt_groq_translate','false');" + MOCK)
     page = ctx.new_page()
     errs = []; page.on('pageerror', lambda e: errs.append(str(e)))
     page.on('dialog', lambda d: d.accept())
@@ -587,6 +588,56 @@ with sync_playwright() as p:
     ok('whisper mic without a key: hint, no recording', 'mic-listening' not in page7.get_attribute('#micBtnA', 'class') and len(wq['calls']) == n)
     ok('no JS errors (whisper conversation)', not errs7, str(errs7))
     ctx7.close()
+
+    # 27. תרגום עם Groq (המפתח שכבר יש), בלי שרת. ברירת מחדל: דלוק כשיש מפתח.
+    gq = {'mode': 'ok', 'calls': []}
+    def groq_text_route(route):
+        u = route.request.url
+        if u.endswith('/models'):
+            route.fulfill(status=200, headers=CORS, body=json.dumps({'data': [{'id': 'openai/gpt-oss-120b'}, {'id': 'openai/gpt-oss-20b'}, {'id': 'whisper-large-v3-turbo'}]})); return
+        body = json.loads(route.request.post_data or '{}'); gq['calls'].append(body)
+        if gq['mode'] == '401':
+            route.fulfill(status=401, headers=CORS, body=json.dumps({'error': {'message': 'Invalid API Key'}})); return
+        if gq['mode'] == '429-120b' and body.get('model') == 'openai/gpt-oss-120b':
+            route.fulfill(status=429, headers={**CORS, 'retry-after': '30'}, body=json.dumps({'error': {'message': 'Rate limit reached'}})); return
+        text = body['messages'][-1]['content']
+        out = ('Sure! Here is the translation and some notes. ' * 40) if gq['mode'] == 'chatty' else 'GQ:' + text
+        route.fulfill(status=200, headers=CORS, body=json.dumps({'choices': [{'message': {'role': 'assistant', 'content': out}}]}))
+    reset(); mm_calls.clear()
+    ctx8, page8, errs8 = new_page(b, "window.__groqDefault = 1; localStorage.setItem('tvt_groq_key','gsk_'+'a'.repeat(40));")
+    page8.route('https://api.groq.com/**', groq_text_route)
+    page8.click('#settingsBtn'); page8.wait_for_selector('#settings[open]')
+    ok('groq translate: on by default when a key exists', page8.is_checked('#optGroqTranslate'))
+    page8.click('#closeSettings')
+    page8.fill('#inputA', 'אפשר לקבל חשבון בבקשה'); page8.click('#sendBtnA')
+    page8.wait_for_function("document.getElementById('outputA').textContent.startsWith('GQ:')", timeout=8000)
+    c = gq['calls'][-1]
+    ok('groq translate: used first, no MyMemory call', page8.inner_text('#outputA') == 'GQ:אפשר לקבל חשבון בבקשה' and not mm_calls, page8.inner_text('#outputA'))
+    ok('groq translate: strong model, low reasoning hidden, Hebrew->English prompt, text as user message',
+       c['model'] == 'openai/gpt-oss-120b' and c.get('reasoning_effort') == 'low' and c.get('include_reasoning') is False
+       and 'from Hebrew into English' in c['messages'][0]['content'] and c['messages'][1]['content'] == 'אפשר לקבל חשבון בבקשה', json.dumps(c)[:200])
+    gq['mode'] = '429-120b'; n = len(gq['calls'])
+    page8.fill('#inputA', 'איפה יש כאן בית מרקחת פתוח'); page8.click('#sendBtnA')
+    page8.wait_for_function("document.getElementById('outputA').textContent.startsWith('GQ:')", timeout=8000)
+    ok('groq translate: busy model -> second model, still Groq', [x['model'] for x in gq['calls'][n:]] == ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'] and not mm_calls)
+    gq['mode'] = 'chatty'
+    page8.fill('#inputA', 'כמה עולה כרטיס לתחנה המרכזית'); page8.click('#sendBtnA')
+    page8.wait_for_function("document.getElementById('outputA').textContent.startsWith('MM:')", timeout=8000)
+    ok('groq translate: an answer that is not a translation is rejected -> MyMemory', page8.inner_text('#outputA') == 'MM:כמה עולה כרטיס לתחנה המרכזית')
+    gq['mode'] = '401'; mm_calls.clear()
+    page8.fill('#inputA', 'תודה על הכל'); page8.click('#sendBtnA')
+    page8.wait_for_function("document.getElementById('outputA').textContent.startsWith('MM:')", timeout=8000)
+    n = len(gq['calls'])
+    page8.fill('#inputA', 'נתראה מחר בבוקר'); page8.click('#sendBtnA')
+    page8.wait_for_function("document.getElementById('outputA').textContent === 'MM:נתראה מחר בבוקר'", timeout=8000)
+    ok('groq translate: bad key -> regular services, and Groq is not retried right away', len(gq['calls']) == n)
+    page8.reload(); page8.wait_for_load_state('networkidle'); gq['mode'] = 'ok'; n = len(gq['calls'])
+    page8.click('#settingsBtn'); page8.wait_for_selector('#settings[open]'); page8.uncheck('#optGroqTranslate'); page8.click('#closeSettings')
+    page8.fill('#inputA', 'הרכבת יוצאת בעוד עשר דקות'); page8.click('#sendBtnA')
+    page8.wait_for_function("document.getElementById('outputA').textContent.startsWith('MM:')", timeout=8000)
+    ok('groq translate: switched off in settings -> not used', len(gq['calls']) == n and page8.evaluate("JSON.parse(localStorage.getItem('tvt_groq_translate'))") is False)
+    ok('no JS errors (groq translate)', not errs8, str(errs8))
+    ctx8.close()
 
     # 18. אחסון פגום לא מפיל את האפליקציה
     bad = """try{localStorage.setItem('tvt_cache_v2','null');localStorage.setItem('tvt_langA','__proto__');

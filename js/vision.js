@@ -14,15 +14,20 @@ const MODELS_CACHE = 'tvt_groq_models';
 const MODELS_MAX_AGE = 24 * 60 * 60 * 1000;
 const badModels = new Set();
 
-async function availableModels(key, force) {
+export async function availableModels(key, force) {
   try {
     const c = JSON.parse(localStorage.getItem(MODELS_CACHE) || 'null');
     if (!force && c && Array.isArray(c.ids) && Date.now() - c.ts < MODELS_MAX_AGE) return c.ids;
   } catch { /* ignore */ }
   try {
-    const res = await fetch(`${GROQ_BASE}/models`, { headers: { Authorization: `Bearer ${key}` }, referrerPolicy: 'no-referrer' });
-    if (!res.ok) return null;
-    const d = await res.json();
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 4000); // ברשת חלשה לא מחכים: ממשיכים לפי סדר הרשימה
+    let d;
+    try {
+      const res = await fetch(`${GROQ_BASE}/models`, { headers: { Authorization: `Bearer ${key}` }, referrerPolicy: 'no-referrer', signal: ctrl.signal });
+      if (!res.ok) return null;
+      d = await res.json();
+    } finally { clearTimeout(t); }
     const ids = (Array.isArray(d.data) ? d.data : []).filter(m => m && m.id && m.active !== false).map(m => m.id);
     try { localStorage.setItem(MODELS_CACHE, JSON.stringify({ ids, ts: Date.now() })); } catch { /* ignore */ }
     return ids;
@@ -43,7 +48,7 @@ export async function pickVisionModel(key, force) {
 }
 export const isModelGone = e => e && (e.status === 404 || (e.status === 400 && !/response_format|json/i.test(e.detail || '') && /model_not_found|decommissioned|does not exist|no longer (available|supported)/i.test(e.detail || '')));
 
-const ENGLISH_NAME = {
+export const ENGLISH_NAME = {
   he: 'Hebrew', en: 'English', ro: 'Romanian', ar: 'Arabic', th: 'Thai', ru: 'Russian', es: 'Spanish', fr: 'French',
   de: 'German', it: 'Italian', pt: 'Portuguese', el: 'Greek', tr: 'Turkish', hu: 'Hungarian', cs: 'Czech', pl: 'Polish',
   nl: 'Dutch', ja: 'Japanese', ko: 'Korean', zh: 'Chinese (Simplified)', vi: 'Vietnamese', hi: 'Hindi'

@@ -1,6 +1,6 @@
 import { LANGUAGES } from './languages.js';
 import { PHRASES, CATEGORY_LABELS, HOTEL_TEMPLATE } from './phrasebook.js';
-import { translate, getEmail, setEmail, clearCache, cacheSize, isLang, getServer, setServer, testServer, normalizeServerUrl, lastServerError } from './translate.js';
+import { translate, getEmail, setEmail, clearCache, cacheSize, isLang, getServer, setServer, testServer, normalizeServerUrl, lastServerError, groqTranslateOn, setGroqTranslate } from './translate.js';
 import { speak, stopSpeaking, listen, listenLoop, unlockAudio, hasVoice, voicesLoaded, speechSupport, isSpeaking } from './speech.js';
 import { panelBStrings, PANEL_B_UI } from './ui-strings.js';
 import { startRecording, recordUtterance, recorderSupported, extFor } from './recorder.js';
@@ -222,7 +222,7 @@ function speakText(text, langKey, { auto = false } = {}) {
 }
 
 /* ---------- היסטוריה ומועדפים ---------- */
-const SRC_LABEL = { azure: '', phrasebook: 'שיחון', cache: 'זיכרון', mymemory: '', google: 'גיבוי Google', lingva: 'גיבוי', same: '', favorite: 'מועדף', listen: '', camera: '' };
+const SRC_LABEL = { azure: '', groq: '', phrasebook: 'שיחון', cache: 'זיכרון', mymemory: '', google: 'גיבוי Google', lingva: 'גיבוי', same: '', favorite: 'מועדף', listen: '', camera: '' };
 const AUTO_LANG = { nameHe: 'זוהתה אוטומטית', native: '', dir: 'auto', speechCode: '' };
 const langCfg = k => (isLang(k) ? LANGUAGES[k] : AUTO_LANG);
 
@@ -1837,6 +1837,9 @@ async function saveServer() {
 sEl.save.addEventListener('click', saveServer);
 
 const gEl = { input: $('optGroqKey'), save: $('saveGroqBtn'), status: $('groqStatus') };
+const groqTrBox = $('optGroqTranslate');
+groqTrBox.checked = groqTranslateOn();
+groqTrBox.addEventListener('change', () => setGroqTranslate(groqTrBox.checked));
 function setGroqStatus(cls, msg) { gEl.status.className = `text-xs min-h-[1rem] ${cls}`; gEl.status.textContent = msg; }
 async function saveGroq() {
   const v = gEl.input.value.trim();

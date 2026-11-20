@@ -13,7 +13,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="מתורגמן" />
-  <link rel="stylesheet" href="css/styles.css?v=0ca615543d" />
+  <link rel="stylesheet" href="css/styles.css?v=05e01c983c" />
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
 
@@ -489,13 +489,17 @@
       </div>
 
       <div class="border-t border-slate-800 pt-3 flex flex-col gap-1.5">
-        <label for="optGroqKey" class="text-slate-300">מפתח Groq להקלטה שקטה ולצילום (חינם)</label>
+        <label for="optGroqKey" class="text-slate-300">מפתח Groq להקלטה שקטה, לצילום ולתרגום (חינם)</label>
         <div class="flex gap-2">
           <input id="optGroqKey" type="password" dir="ltr" autocomplete="off" spellcheck="false" placeholder="gsk_..." class="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
           <button id="saveGroqBtn" type="button" class="shrink-0 min-w-[5.5rem] px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white transition font-semibold">שמור ובדוק</button>
         </div>
         <p id="groqStatus" class="text-xs min-h-[1rem]" aria-live="polite"></p>
-        <p class="text-xs text-slate-400 leading-relaxed">יוצרים מפתח בחינם: console.groq.com ← API Keys ← Create API Key, ומדביקים כאן. המפתח נשמר רק בטלפון הזה, ומי שיש לו את הקישור לא יכול להשתמש בו.</p>
+        <label class="flex items-start gap-2 text-slate-300 cursor-pointer select-none">
+          <input id="optGroqTranslate" type="checkbox" class="mt-1 h-4 w-4 accent-indigo-500" checked />
+          <span>להשתמש ב-Groq גם לתרגום <span class="text-slate-400 text-xs">(תרגום טבעי ומדויק יותר, בלי שרת ובלי הרשמה נוספת. אם Groq לא זמין, עוברים לבד לשירותים הרגילים)</span></span>
+        </label>
+        <p class="text-xs text-slate-400 leading-relaxed">יוצרים מפתח בחינם: console.groq.com ← API Keys ← Create API Key, ומדביקים כאן. המפתח נשמר רק בטלפון הזה, ומי שיש לו את הקישור לא יכול להשתמש בו. כשהתרגום ב-Groq דלוק, הטקסט לתרגום נשלח ל-Groq.</p>
       </div>
 
       <div class="border-t border-slate-800 pt-3 flex items-center justify-between gap-3">
@@ -541,18 +545,18 @@
   <!-- כתובת עם גרסה לכל קובץ, כדי שהדפדפן לעולם לא יערבב קובץ ישן עם חדש. נכתב אוטומטית ע"י tools/stamp-sw.py -->
   <script type="importmap">
   { "imports": {
-    "./js/app.js": "./js/app.js?v=0ca615543d",
-    "./js/languages.js": "./js/languages.js?v=0ca615543d",
-    "./js/phrasebook.js": "./js/phrasebook.js?v=0ca615543d",
-    "./js/translate.js": "./js/translate.js?v=0ca615543d",
-    "./js/speech.js": "./js/speech.js?v=0ca615543d",
-    "./js/recorder.js": "./js/recorder.js?v=0ca615543d",
-    "./js/transcribe.js": "./js/transcribe.js?v=0ca615543d",
-    "./js/vision.js": "./js/vision.js?v=0ca615543d",
-    "./js/currency.js": "./js/currency.js?v=0ca615543d",
-    "./js/ui-strings.js": "./js/ui-strings.js?v=0ca615543d"
+    "./js/app.js": "./js/app.js?v=05e01c983c",
+    "./js/languages.js": "./js/languages.js?v=05e01c983c",
+    "./js/phrasebook.js": "./js/phrasebook.js?v=05e01c983c",
+    "./js/translate.js": "./js/translate.js?v=05e01c983c",
+    "./js/speech.js": "./js/speech.js?v=05e01c983c",
+    "./js/recorder.js": "./js/recorder.js?v=05e01c983c",
+    "./js/transcribe.js": "./js/transcribe.js?v=05e01c983c",
+    "./js/vision.js": "./js/vision.js?v=05e01c983c",
+    "./js/currency.js": "./js/currency.js?v=05e01c983c",
+    "./js/ui-strings.js": "./js/ui-strings.js?v=05e01c983c"
   } }
   </script>
-  <script type="module" src="js/app.js?v=0ca615543d"></script>
+  <script type="module" src="js/app.js?v=05e01c983c"></script>
 </body>
 </html>
