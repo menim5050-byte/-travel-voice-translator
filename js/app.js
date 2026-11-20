@@ -3,7 +3,7 @@ import { PHRASES, CATEGORY_LABELS, HOTEL_TEMPLATE } from './phrasebook.js';
 import { translate, getEmail, setEmail, clearCache, cacheSize, isLang, getServer, setServer, testServer, normalizeServerUrl, lastServerError } from './translate.js';
 import { speak, stopSpeaking, listen, listenLoop, unlockAudio, hasVoice, voicesLoaded, speechSupport, isSpeaking } from './speech.js';
 import { panelBStrings, PANEL_B_UI } from './ui-strings.js';
-import { startRecording, recorderSupported, extFor } from './recorder.js';
+import { startRecording, recordUtterance, recorderSupported, extFor } from './recorder.js';
 import { transcribe, getGroqKey, setGroqKey, looksLikeGroqKey, testGroqKey, groupSegments } from './transcribe.js';
 import { prepareImage, readAndTranslate } from './vision.js';
 import { getRates, normalizeCurrency, toILS, formatILS, RATES_CREDIT } from './currency.js';
@@ -473,6 +473,7 @@ function stopRecognition() {
   state.micSession = null;
   state.activeMic = null;
   if (s && s.handle) s.handle.stop();
+  if (wState.session && !wState.session.auto) wState.session.stop(); // הקלטת Whisper של כפתור דובר
   resetMicButtons();
 }
 
@@ -480,6 +481,7 @@ function toggleMic(speaker) {
   unlockAudio(); // חייב להיקרא מתוך לחיצה, אחרת נייד יחסום את ההקראה
   stopSpeaking();
   keepScreenOn();
+  if (wState.engine === 'whisper') { toggleWhisperMic(speaker); return; }
   if (!speechSupport.stt) { showBanner(MIC_ERRORS.unsupported, 'warn'); return; }
   if (state.activeMic === speaker) { stopRecognition(); return; }
   stopRecognition();
@@ -527,6 +529,199 @@ function toggleMic(speaker) {
   });
   if (handle) { if (current()) session.handle = handle; else handle.stop(); }
   else if (current()) { state.micSession = null; state.activeMic = null; resetMicButtons(); }
+}
+
+
+/* ---------- זיהוי דיבור עם Whisper: שקט, מסיים לבד, וגם זיהוי אוטומטי של מי מדבר ---------- */
+const wState = {
+  engine: loadJSON('tvt_stt_engine', 'phone') === 'whisper' ? 'whisper' : 'phone',
+  session: null,          // ההקלטה הנוכחית: { speaker, auto, stop() }
+  auto: { on: false }
+};
+const aEl = { btn: $('autoTalkBtn'), label: $('autoTalkLabel'), loop: $('autoTalkLoop'), status: $('autoTalkStatus'), wrap: $('autoTalkWrap') };
+
+function setMicBusyUi(speaker, mode) {
+  const btn = speaker === 'A' ? el.micBtnA : el.micBtnB;
+  const label = speaker === 'A' ? el.micLabelA : el.micLabelB;
+  if (mode === 'rec') {
+    btn.classList.remove('bg-sky-600', 'hover:bg-sky-500', 'bg-emerald-600', 'hover:bg-emerald-500');
+    btn.classList.add('mic-listening', 'bg-rose-600', 'hover:bg-rose-500');
+    label.textContent = micText(speaker, 'listening');
+  } else resetMicButton(speaker);
+}
+
+const SCRIPT_OF = { he: /[֐-׿]/, ar: /[؀-ۿ]/, th: /[฀-๿]/, ru: /[Ѐ-ӿ]/, el: /[Ͱ-Ͽ]/, hi: /[ऀ-ॿ]/, ko: /[가-힯]/, ja: /[぀-ヿ]/ };
+// מי דיבר: לפי השפה ש-Whisper זיהה, ואם הכתב חד-משמעי (עברית, תאית, ערבית...) הכתב מכריע
+function decideSpeaker(text, detected) {
+  const a = el.langA.value, b = el.langB.value;
+  for (const [k, re] of Object.entries(SCRIPT_OF)) {
+    if (!re.test(text)) continue;
+    if (k === a && b !== a) return { speaker: 'A', from: a };
+    if (k === b) return { speaker: 'B', from: b };
+  }
+  if (detected === a) return { speaker: 'A', from: a };
+  if (detected === b) return { speaker: 'B', from: b };
+  return { speaker: 'B', from: isLang(detected) ? detected : 'auto' }; // שפה שלישית: מתרגמים לשפה של דובר א׳
+}
+
+/** מקליט משפט אחד בשקט ומתמלל. auto=true: זיהוי שפה אוטומטי. מחזיר { text, langKey } או null. */
+async function whisperUtterance({ speaker, auto, onState }) {
+  if (!getGroqKey()) {
+    showBanner('לזיהוי דיבור עם Whisper צריך מפתח Groq (הגדרות ← מפתח Groq).', 'warn');
+    return null;
+  }
+  if (!recorderSupported()) { showBanner('הדפדפן הזה לא תומך בהקלטה.', 'error'); return null; }
+  const session = { speaker, auto, stop: () => { session.stopRequested = true; } };
+  wState.session = session;
+  if (onState) onState('rec');
+  let ctl;
+  try {
+    ctl = await recordUtterance({ onSpeech: () => { if (onState) onState('speech'); } });
+  } catch (e) {
+    if (wState.session === session) wState.session = null;
+    if (onState) onState('idle');
+    const msg = e.code === 'not-allowed' ? MIC_ERRORS['not-allowed'] : 'לא ניתן להפעיל את המיקרופון כרגע.';
+    showBanner(msg, 'error');
+    return null;
+  }
+  session.stop = () => ctl.stop();
+  if (session.stopRequested) ctl.stop();
+  const res = await ctl.done;
+  if (wState.session === session) wState.session = null;
+  if (!res.blob || (!res.hadSpeech && !(res.reason === 'user' && res.ms > 800))) {
+    if (onState) onState('empty');
+    return { text: '', langKey: null, empty: true };
+  }
+  if (onState) onState('transcribing');
+  try {
+    const r = await transcribe(res.blob, { langKey: auto ? 'auto' : langOf(speaker), filename: `speech.${extFor(res.blob.type)}` });
+    const text = String(r.text || '').trim();
+    if (onState) onState(text ? 'done' : 'empty');
+    return { text, langKey: r.langKey };
+  } catch (e) {
+    if (onState) onState('error');
+    showBanner(e.message || 'התמלול נכשל.', 'error');
+    return null;
+  }
+}
+
+// כפתור מיקרופון של דובר, כשמנוע הזיהוי הוא Whisper
+async function toggleWhisperMic(speaker) {
+  if (wState.session) {
+    const same = wState.session.speaker === speaker && !wState.session.auto;
+    wState.session.stop();
+    if (same) return; // לחיצה שנייה = עצירה, והמשפט יתומלל
+  }
+  stopAutoTalk();
+  state.activeMic = speaker;
+  const interimEl = speaker === 'A' ? el.interimA : el.interimB;
+  const inputEl = speaker === 'A' ? el.inputA : el.inputB;
+  const r = await whisperUtterance({
+    speaker, auto: false,
+    onState: st => {
+      if (st === 'rec') { setMicBusyUi(speaker, 'rec'); interimEl.textContent = '🎙️ ' + micText(speaker, 'hearing'); }
+      else if (st === 'transcribing') { setMicBusyUi(speaker, 'idle'); interimEl.textContent = 'מתמלל...'; }
+      else if (st === 'empty') { setMicBusyUi(speaker, 'idle'); interimEl.textContent = 'לא זוהה דיבור. נסה שוב, קרוב יותר לטלפון.'; }
+      else { setMicBusyUi(speaker, 'idle'); if (st !== 'done') interimEl.textContent = ''; }
+    }
+  });
+  if (state.activeMic === speaker) state.activeMic = null;
+  if (!r || !r.text) return;
+  inputEl.value = r.text;
+  if (el.autoTranslateOnStop.checked) { interimEl.textContent = ''; handleTranslate(speaker, r.text); }
+  else interimEl.textContent = micText(speaker, 'captured');
+}
+
+/* "דברו – האפליקציה תזהה מי מדבר" */
+function setAutoTalkUi(mode, note) {
+  const busy = mode === 'rec' || mode === 'speech' || mode === 'transcribing';
+  aEl.btn.classList.toggle('mic-listening', mode === 'rec' || mode === 'speech');
+  aEl.label.textContent = mode === 'transcribing' ? 'מתמלל...' : busy ? '⏹ מאזין... (לחץ לעצירה)' : 'דברו – האפליקציה תזהה מי מדבר';
+  if (note !== undefined) aEl.status.textContent = note;
+}
+function stopAutoTalk() {
+  if (!wState.auto.on) return;
+  wState.auto.on = false;
+  if (wState.session && wState.session.auto) wState.session.stop();
+}
+async function waitSpeechToEnd(maxMs = 30000) {
+  const t0 = Date.now();
+  await new Promise(r => setTimeout(r, 300));
+  while (isSpeaking() && Date.now() - t0 < maxMs) await new Promise(r => setTimeout(r, 250));
+  await new Promise(r => setTimeout(r, 350)); // שהרמקול ישתתק לגמרי לפני שמקליטים שוב
+}
+async function autoTalkLoop() {
+  if (wState.auto.on) { stopAutoTalk(); return; }
+  if (!getGroqKey()) {
+    aEl.status.textContent = 'צריך מפתח Groq: הגדרות ← "מפתח Groq להקלטה שקטה ולצילום".';
+    showBanner('לזיהוי אוטומטי של הדובר צריך מפתח Groq בהגדרות.', 'warn');
+    return;
+  }
+  unlockAudio();
+  stopSpeaking();
+  if (state.activeMic) stopRecognition();
+  if (wState.session) wState.session.stop();
+  wState.auto.on = true;
+  keepScreenOn();
+  let empties = 0;
+  while (wState.auto.on) {
+    const r = await whisperUtterance({
+      auto: true,
+      onState: st => {
+        if (st === 'rec') setAutoTalkUi('rec', `מאזין... דברו ב${LANGUAGES[el.langA.value].nameHe} או ב${LANGUAGES[el.langB.value].nameHe}.`);
+        else if (st === 'speech') setAutoTalkUi('speech');
+        else if (st === 'transcribing') setAutoTalkUi('transcribing', 'מתמלל ומזהה שפה...');
+        else if (st === 'empty') setAutoTalkUi('idle', 'לא זוהה דיבור.');
+        else setAutoTalkUi('idle');
+      }
+    });
+    if (!r) break;                                   // שגיאה: עוצרים
+    if (r.empty || !r.text) {
+      if (!aEl.loop.checked || ++empties >= 3) break; // במצב רציף: אחרי 3 פעמים בלי דיבור עוצרים
+      continue;
+    }
+    empties = 0;
+    const d = decideSpeaker(r.text, r.langKey);
+    const who = d.speaker === 'A' ? 'דובר א׳' : 'דובר ב׳';
+    const langName = isLang(d.from) ? LANGUAGES[d.from].nameHe : 'שפה שזוהתה אוטומטית';
+    aEl.status.textContent = `זוהה: ${langName} ← ${who}`;
+    setActiveTurn(d.speaker);
+    const inputEl = d.speaker === 'A' ? el.inputA : el.inputB;
+    inputEl.value = r.text;
+    const target = langOf(other(d.speaker));
+    if (d.from === langOf(d.speaker)) await handleTranslate(d.speaker, r.text);
+    else await runTranslation(d.speaker, r.text, d.from, d.speaker === 'B' ? el.langA.value : target);
+    if (!wState.auto.on || !aEl.loop.checked) break;
+    await waitSpeechToEnd();
+  }
+  wState.auto.on = false;
+  setAutoTalkUi('idle');
+}
+aEl.btn.addEventListener('click', autoTalkLoop);
+aEl.loop.checked = loadJSON('tvt_autotalk_loop', false) === true;
+aEl.loop.addEventListener('change', () => saveJSON('tvt_autotalk_loop', aEl.loop.checked));
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') stopAutoTalk(); });
+
+function renderSttEngine() {
+  const box = $('sttEngine');
+  box.textContent = '';
+  [['phone', '📱 של הטלפון', 'מהיר, עם צליל'], ['whisper', '🎙️ Whisper', 'שקט ומדויק, מפתח Groq']].forEach(([id, t, sub]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.engine = id;
+    b.className = 'rounded-xl border px-2 py-2 text-sm flex flex-col items-center gap-0.5 transition ' + (wState.engine === id
+      ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700');
+    const a = document.createElement('span'); a.className = 'font-semibold'; a.textContent = t;
+    const c = document.createElement('span'); c.className = 'text-[11px] opacity-80'; c.textContent = sub;
+    b.appendChild(a); b.appendChild(c);
+    b.addEventListener('click', () => {
+      if (id === 'whisper' && !getGroqKey()) { setGroqStatus('text-amber-300', 'כדי להשתמש ב-Whisper, הדבק קודם מפתח Groq כאן למטה.'); }
+      wState.engine = id;
+      saveJSON('tvt_stt_engine', id);
+      renderSttEngine();
+    });
+    box.appendChild(b);
+  });
 }
 
 /* ---------- העתקה ושיתוף ---------- */
@@ -1658,6 +1853,7 @@ gEl.save.addEventListener('click', saveGroq);
 gEl.input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveGroq(); } });
 
 function refreshSettingsInfo() {
+  renderSttEngine();
   showServerState();
   gEl.input.value = getGroqKey();
   if (getGroqKey()) setGroqStatus('text-emerald-400', 'מפתח שמור ✓'); else setGroqStatus('text-slate-400', 'לא מוגדר מפתח.');
@@ -1850,7 +2046,7 @@ if ('serviceWorker' in navigator) {
   // מרעננים לבד רק כשבאמת לא משתמשים באפליקציה. אחרת שואלים.
   const busy = () => {
     const a = document.activeElement;
-    return !!state.activeMic || state.pending.A || state.pending.B || el.settings.open || isSpeaking() || lm.open || cm.open ||
+    return !!state.activeMic || state.pending.A || state.pending.B || el.settings.open || isSpeaking() || lm.open || cm.open || wState.auto.on || !!wState.session ||
       !el.bigTextModal.classList.contains('hidden') || (a && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT')) ||
       Date.now() - lastActivity < 2 * 60 * 1000;
   };

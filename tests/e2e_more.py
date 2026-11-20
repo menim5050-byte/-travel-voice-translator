@@ -514,6 +514,80 @@ with sync_playwright() as p:
     ok('no JS errors (server)', not errs6, str(errs6))
     ctx6.close()
 
+    # 26. Whisper בשיחה: מיקרופון שקט שמסיים לבד, וזיהוי אוטומטי של מי מדבר
+    MEDIA2 = """(() => {
+      window.__level = 0.02; window.__gum = 0;
+      const stream = { getTracks: () => [{ stop() {} }] };
+      navigator.mediaDevices.getUserMedia = async () => { window.__gum++; return stream; };
+      window.MediaRecorder = function () {
+        this.state = 'inactive'; this.mimeType = 'audio/webm;codecs=opus';
+        this.start = () => { this.state = 'recording'; this._t = setInterval(() => this.ondataavailable && this.ondataavailable({ data: new Blob([new Uint8Array(3000)], { type: 'audio/webm' }) }), 200); };
+        this.stop = () => { clearInterval(this._t); this.state = 'inactive'; setTimeout(() => { this.ondataavailable && this.ondataavailable({ data: new Blob([new Uint8Array(1000)]) }); this.onstop && this.onstop(); }, 20); };
+      };
+      window.MediaRecorder.isTypeSupported = m => m.startsWith('audio/webm');
+      window.AudioContext = function () {
+        this.createMediaStreamSource = () => ({ connect() {} });
+        this.createAnalyser = () => ({ fftSize: 512, getByteTimeDomainData(b) { const a = Math.round(window.__level * 90); for (let i = 0; i < b.length; i++) b[i] = 128 + (i % 2 ? a : -a); } });
+        this.close = () => {};
+      };
+    })();"""
+    wq = {'queue': [], 'calls': []}
+    def whisper_route(route):
+        u = route.request.url
+        if u.endswith('/models'):
+            route.fulfill(status=200, headers=CORS, body=json.dumps({'data': [{'id': 'whisper-large-v3-turbo'}]})); return
+        wq['calls'].append(route.request.post_data_buffer or b'')
+        lang, text = wq['queue'].pop(0) if wq['queue'] else ('english', '')
+        route.fulfill(status=200, headers=CORS, body=json.dumps({'language': lang, 'text': text, 'duration': 2.0, 'segments': [{'start': 0, 'end': 2, 'text': text}]}))
+    def say(pg, ms=1000):
+        pg.evaluate('window.__level = 0.5'); pg.wait_for_timeout(ms); pg.evaluate('window.__level = 0.02')
+    reset()
+    ctx7, page7, errs7 = new_page(b, "localStorage.setItem('tvt_groq_key','gsk_'+'a'.repeat(40));" + MEDIA2)
+    page7.route('https://api.groq.com/**', whisper_route)
+    tap7 = lambda sel: page7.evaluate(f"document.querySelector('{sel}').click()")
+    page7.click('#settingsBtn'); page7.wait_for_selector('#settings[open]')
+    page7.click('#sttEngine button[data-engine="whisper"]')
+    ok('whisper engine selectable in settings', page7.evaluate("JSON.parse(localStorage.getItem('tvt_stt_engine'))") == 'whisper')
+    page7.click('#closeSettings')
+    page7.check('#autoTranslateOnStop')
+    wq['queue'].append(('hebrew', 'איפה התחנה הקרובה'))
+    tap7('#micBtnA'); page7.wait_for_timeout(700)
+    ok('whisper mic: recording quietly (no phone recognizer)', 'mic-listening' in page7.get_attribute('#micBtnA', 'class') and page7.evaluate('window.__recs.length') == 0)
+    say(page7, 1000)
+    t0 = time.time()
+    page7.wait_for_function("document.getElementById('outputA').textContent === 'MM:איפה התחנה הקרובה'", timeout=8000)
+    dt = time.time() - t0
+    ok('whisper mic: stops by itself after silence, transcribes and translates', dt < 4 and b'name="language"' in wq['calls'][-1] and b'\r\n\r\nhe\r\n' in wq['calls'][-1], f'{dt:.1f}s')
+    n = len(wq['calls'])
+    tap7('#micBtnB'); page7.wait_for_timeout(300); tap7('#micBtnB'); page7.wait_for_timeout(500)
+    ok('whisper mic: nothing said -> no request, clear message', len(wq['calls']) == n and 'לא זוהה דיבור' in page7.inner_text('#interimB'))
+    # זיהוי אוטומטי של הדובר: שפה שלישית (רומנית) -> דובר ב׳ מתורגם לעברית; עברית -> דובר א׳
+    wq['queue'].append(('romanian', 'Unde este gara centrală din oraș?'))
+    page7.click('#autoTalkBtn'); page7.wait_for_timeout(700); say(page7, 900)
+    page7.wait_for_function("document.getElementById('outputB').textContent.startsWith('MM:')", timeout=8000)
+    ok('auto speaker: Romanian -> speaker B, translated to Hebrew', page7.inner_text('#outputB') == 'MM:Unde este gara centrală din oraș?' and 'langpair=ro%7Che' in mm_calls[-1] and 'רומנית' in page7.inner_text('#autoTalkStatus'), page7.inner_text('#autoTalkStatus'))
+    ok('auto speaker: language detection requested (no language sent)', b'name="language"' not in wq['calls'][-1])
+    wq['queue'].append(('english', 'תודה רבה על כל העזרה היום'))  # Whisper טועה בשפה, הכתב העברי מכריע
+    page7.click('#autoTalkBtn'); page7.wait_for_timeout(700); say(page7, 900)
+    page7.wait_for_function("document.getElementById('outputA').textContent === 'MM:תודה רבה על כל העזרה היום'", timeout=8000)
+    ok('auto speaker: Hebrew script -> speaker A even if Whisper guessed wrong', 'דובר א׳' in page7.inner_text('#autoTalkStatus'))
+    # מצב רציף: אחרי משפט והקראה, מתחיל להאזין שוב לבד
+    page7.check('#autoTalkLoop'); g0 = page7.evaluate('window.__gum')
+    wq['queue'].append(('romanian', 'Mulțumesc frumos pentru tot ajutorul'))
+    page7.click('#autoTalkBtn'); page7.wait_for_timeout(700); say(page7, 900)
+    page7.wait_for_function("document.getElementById('outputB').textContent === 'MM:Mulțumesc frumos pentru tot ajutorul'", timeout=8000)
+    page7.wait_for_function(f"window.__gum >= {g0 + 2}", timeout=6000)
+    ok('auto speaker (continuous): listens again by itself after the answer', 'מאזין' in page7.inner_text('#autoTalkLabel'))
+    tap7('#autoTalkBtn'); page7.wait_for_timeout(600)
+    ok('auto speaker: tap stops the continuous mode', 'דברו' in page7.inner_text('#autoTalkLabel'))
+    page7.evaluate("localStorage.removeItem('tvt_groq_key')"); n = len(wq['calls'])
+    page7.click('#autoTalkBtn'); page7.wait_for_timeout(400)
+    ok('auto speaker without a Groq key: explains what to do, records nothing', 'מפתח Groq' in page7.inner_text('#autoTalkStatus') and len(wq['calls']) == n and 'דברו' in page7.inner_text('#autoTalkLabel'))
+    tap7('#micBtnA'); page7.wait_for_timeout(400)
+    ok('whisper mic without a key: hint, no recording', 'mic-listening' not in page7.get_attribute('#micBtnA', 'class') and len(wq['calls']) == n)
+    ok('no JS errors (whisper conversation)', not errs7, str(errs7))
+    ctx7.close()
+
     # 18. אחסון פגום לא מפיל את האפליקציה
     bad = """try{localStorage.setItem('tvt_cache_v2','null');localStorage.setItem('tvt_langA','__proto__');
       localStorage.setItem('tvt_history','{"x":1}');localStorage.setItem('tvt_favs','[1,null,{"a":2}]');}catch(e){}"""

@@ -13,7 +13,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="מתורגמן" />
-  <link rel="stylesheet" href="css/styles.css?v=2179382312" />
+  <link rel="stylesheet" href="css/styles.css?v=0ca615543d" />
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
 
@@ -95,6 +95,21 @@
 
     <!-- Two Speaker Panels -->
     <section id="panelsSection" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+      <!-- Auto speaker detection (Whisper) -->
+      <div id="autoTalkWrap" class="md:col-span-2 order-first flex flex-col gap-1.5">
+        <div class="flex items-stretch gap-2">
+          <button id="autoTalkBtn" type="button" class="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold text-sm sm:text-base bg-gradient-to-l from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white shadow-md transition">
+            <span aria-hidden="true">🎙️</span>
+            <span id="autoTalkLabel">דברו – האפליקציה תזהה מי מדבר</span>
+          </button>
+          <label class="shrink-0 inline-flex items-center gap-1.5 text-xs text-slate-300 bg-slate-900 border border-slate-800 rounded-xl px-2.5 cursor-pointer select-none" title="להמשיך להאזין אחרי כל משפט">
+            <input id="autoTalkLoop" type="checkbox" class="accent-indigo-500 w-4 h-4" />
+            <span>רציף</span>
+          </label>
+        </div>
+        <p id="autoTalkStatus" class="text-xs text-slate-400 min-h-[1rem]" aria-live="polite"></p>
+      </div>
 
       <!-- Speaker A -->
       <article id="panelA" class="bg-slate-900 border-2 border-sky-500/80 rounded-2xl p-4 sm:p-5 flex flex-col gap-3.5 shadow-lg transition">
@@ -457,6 +472,12 @@
       </div>
 
       <div class="border-t border-slate-800 pt-3 flex flex-col gap-1.5">
+        <span class="text-slate-300">זיהוי דיבור בכפתורי המיקרופון</span>
+        <div id="sttEngine" class="grid grid-cols-2 gap-2"></div>
+        <p class="text-xs text-slate-400 leading-relaxed">Whisper מקליט בשקט (בלי הצליל של הטלפון), מסיים לבד כשמפסיקים לדבר, ומדויק יותר ברומנית ובתאית. לוקח שנייה או שתיים יותר, וצריך מפתח Groq. כפתור "דברו – האפליקציה תזהה מי מדבר" תמיד עובד עם Whisper.</p>
+      </div>
+
+      <div class="border-t border-slate-800 pt-3 flex flex-col gap-1.5">
         <span class="text-slate-300">שרת תרגום אישי (רשות, Microsoft Translator)</span>
         <input id="optServerUrl" type="url" dir="ltr" autocomplete="off" spellcheck="false" aria-label="כתובת השרת" placeholder="https://xxxx.workers.dev" class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
         <div class="flex gap-2">
@@ -520,18 +541,18 @@
   <!-- כתובת עם גרסה לכל קובץ, כדי שהדפדפן לעולם לא יערבב קובץ ישן עם חדש. נכתב אוטומטית ע"י tools/stamp-sw.py -->
   <script type="importmap">
   { "imports": {
-    "./js/app.js": "./js/app.js?v=2179382312",
-    "./js/languages.js": "./js/languages.js?v=2179382312",
-    "./js/phrasebook.js": "./js/phrasebook.js?v=2179382312",
-    "./js/translate.js": "./js/translate.js?v=2179382312",
-    "./js/speech.js": "./js/speech.js?v=2179382312",
-    "./js/recorder.js": "./js/recorder.js?v=2179382312",
-    "./js/transcribe.js": "./js/transcribe.js?v=2179382312",
-    "./js/vision.js": "./js/vision.js?v=2179382312",
-    "./js/currency.js": "./js/currency.js?v=2179382312",
-    "./js/ui-strings.js": "./js/ui-strings.js?v=2179382312"
+    "./js/app.js": "./js/app.js?v=0ca615543d",
+    "./js/languages.js": "./js/languages.js?v=0ca615543d",
+    "./js/phrasebook.js": "./js/phrasebook.js?v=0ca615543d",
+    "./js/translate.js": "./js/translate.js?v=0ca615543d",
+    "./js/speech.js": "./js/speech.js?v=0ca615543d",
+    "./js/recorder.js": "./js/recorder.js?v=0ca615543d",
+    "./js/transcribe.js": "./js/transcribe.js?v=0ca615543d",
+    "./js/vision.js": "./js/vision.js?v=0ca615543d",
+    "./js/currency.js": "./js/currency.js?v=0ca615543d",
+    "./js/ui-strings.js": "./js/ui-strings.js?v=0ca615543d"
   } }
   </script>
-  <script type="module" src="js/app.js?v=2179382312"></script>
+  <script type="module" src="js/app.js?v=0ca615543d"></script>
 </body>
 </html>

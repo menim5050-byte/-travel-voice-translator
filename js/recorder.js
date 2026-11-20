@@ -74,3 +74,56 @@ export async function startRecording({ onLevel } = {}) {
     cancel: () => { stopped = true; try { rec.onstop = null; if (rec.state !== 'inactive') rec.stop(); } catch { /* ignore */ } release(); }
   };
 }
+
+/**
+ * מקליט משפט אחד בשקט ומזהה לבד מתי הדובר סיים (לפי עוצמת הקול).
+ * מחזיר { stop(), cancel(), done } כאשר done מתממש ל-{ blob, hadSpeech, reason, ms }.
+ * reason: 'silence' (הדובר סיים), 'user' (לחיצה), 'no-speech' (לא דיברו), 'max', 'cancel'.
+ */
+export async function recordUtterance({ onLevel, onSpeech, silenceMs = 1400, noSpeechMs = 8000, maxMs = 30000 } = {}) {
+  let finished = false, hadSpeech = false, speechRun = 0, silentFor = 0, floor = null, last = 0;
+  const calib = [];
+  const startedAt = Date.now();
+  let resolveDone;
+  const done = new Promise(r => { resolveDone = r; });
+  let rec = null;
+  const finish = async reason => {
+    if (finished) return;
+    finished = true;
+    const blob = rec ? await rec.stop() : null;
+    resolveDone({ blob, hadSpeech, reason, ms: Date.now() - startedAt });
+  };
+  rec = await startRecording({
+    onLevel: v => {
+      if (onLevel) onLevel(v);
+      if (finished) return;
+      const now = Date.now();
+      const dt = last ? now - last : 120;
+      last = now;
+      const t = now - startedAt;
+      // החצי שנייה הראשונה מודדת את רעש הרקע (הערך הנמוך, למקרה שמתחילים לדבר מיד)
+      if (floor === null) {
+        calib.push(v);
+        if (calib.length >= 4) floor = Math.min(0.15, Math.min(...calib));
+        return;
+      }
+      const speakTh = Math.max(0.12, floor * 2.2);
+      if (v > speakTh) {
+        speechRun++;
+        silentFor = 0;
+        if (!hadSpeech && speechRun >= 2) { hadSpeech = true; if (onSpeech) onSpeech(); }
+      } else {
+        speechRun = 0;
+        if (hadSpeech) silentFor += dt;
+      }
+      if (hadSpeech && silentFor >= silenceMs) finish('silence');
+      else if (!hadSpeech && t >= noSpeechMs) finish('no-speech');
+      else if (t >= maxMs) finish('max');
+    }
+  });
+  return {
+    stop: () => finish('user'),
+    cancel: () => { if (finished) return; finished = true; rec.cancel(); resolveDone({ blob: null, hadSpeech, reason: 'cancel', ms: Date.now() - startedAt }); },
+    done
+  };
+}
