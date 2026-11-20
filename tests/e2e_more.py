@@ -562,6 +562,13 @@ with sync_playwright() as p:
     n = len(wq['calls'])
     tap7('#micBtnB'); page7.wait_for_timeout(300); tap7('#micBtnB'); page7.wait_for_timeout(500)
     ok('whisper mic: nothing said -> no request, clear message', len(wq['calls']) == n and 'לא זוהה דיבור' in page7.inner_text('#interimB'))
+    # באג שדווח 20.11: רעש קצר אחרי הלחיצה סגר את ההקלטה לפני שהתחילו לדבר
+    n = len(wq['calls']); wq['queue'].append(('hebrew', 'בדיקה אחרי רעש קצר'))
+    tap7('#micBtnA'); page7.wait_for_timeout(350); say(page7, 250); page7.wait_for_timeout(3000)
+    ok('whisper mic: a short noise after pressing does not close it', 'mic-listening' in page7.get_attribute('#micBtnA', 'class') and len(wq['calls']) == n)
+    say(page7, 1000)
+    page7.wait_for_function("document.getElementById('outputA').textContent === 'MM:בדיקה אחרי רעש קצר'", timeout=8000)
+    ok('whisper mic: then the real sentence is recorded and translated', len(wq['calls']) == n + 1)
     # זיהוי אוטומטי של הדובר: שפה שלישית (רומנית) -> דובר ב׳ מתורגם לעברית; עברית -> דובר א׳
     wq['queue'].append(('romanian', 'Unde este gara centrală din oraș?'))
     page7.click('#autoTalkBtn'); page7.wait_for_timeout(700); say(page7, 900)

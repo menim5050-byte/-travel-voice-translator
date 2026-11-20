@@ -613,7 +613,7 @@ async function whisperUtterance({ speaker, auto, onState }) {
   if (session.stopRequested) ctl.stop();
   const res = await ctl.done;
   if (wState.session === session) wState.session = null;
-  if (!res.blob || (!res.hadSpeech && !(res.reason === 'user' && res.ms > 800))) {
+  if (!res.blob || (!res.hadSpeech && !res.maybeSpeech && !(res.reason === 'user' && res.ms > 800))) {
     if (onState) onState('empty');
     return { text: '', langKey: null, empty: true };
   }

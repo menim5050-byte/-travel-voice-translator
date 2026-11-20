@@ -76,13 +76,58 @@ export async function startRecording({ onLevel } = {}) {
 }
 
 /**
- * מקליט משפט אחד בשקט ומזהה לבד מתי הדובר סיים (לפי עוצמת הקול).
- * מחזיר { stop(), cancel(), done } כאשר done מתממש ל-{ blob, hadSpeech, reason, ms }.
- * reason: 'silence' (הדובר סיים), 'user' (לחיצה), 'no-speech' (לא דיברו), 'max', 'cancel'.
+ * מזהה סוף משפט לפי עוצמת הקול. פונקציה טהורה (בלי מיקרופון), כדי שאפשר לבדוק אותה אוטומטית.
+ * push(level 0..1, t ms מתחילת ההקלטה) מחזיר null, { type: 'speech' } או { type: 'end', reason }.
+ * - 300ms ראשונים לא נמדדים (המיקרופון "מתעורר" ומחזיר אפסים).
+ * - רעש רקע = המינימום ב-1.5 השניות האחרונות, כך שהוא מתעדכן גם ברעש קבוע (רכב, טלוויזיה).
+ * - דיבור מאושר רק כש-4 מתוך 6 המדידות האחרונות (כ-0.7 שנייה) מעל הסף. רעש קצר (נקישה, רבע שנייה) לא נחשב.
+ * - סוף משפט אחרי 1.8 שניות שקט, כך שהפסקה קצרה באמצע משפט לא חותכת אותו.
+ * - קול קצר שאולי היה מילה אחת ("כן"): maybeSpeech=true. אם אחריו 4 שניות שקט, מסיימים ('short') ושולחים לתמלול.
+ * - בלי שום קול עד noSpeechMs: מסיימים ('no-speech') בלי לשלוח.
  */
-export async function recordUtterance({ onLevel, onSpeech, silenceMs = 1400, noSpeechMs = 8000, maxMs = 30000 } = {}) {
-  let finished = false, hadSpeech = false, speechRun = 0, silentFor = 0, floor = null, last = 0;
-  const calib = [];
+export function createUtteranceDetector({ silenceMs = 1800, noSpeechMs = 8000, maxMs = 30000, warmupMs = 300, floorWindowMs = 1500, minTh = 0.12 } = {}) {
+  const hist = [];            // { t, v } לחישוב רעש הרקע
+  const recent = [];          // true/false: האם המדידה מעל סף הדיבור (6 אחרונות)
+  let hadSpeech = false, maybeSpeech = false, silentFor = 0, lastT = null, measured = 0, ended = false, loudCount = 0, lastLoudT = 0;
+  const state = () => ({ hadSpeech, maybeSpeech });
+  function push(v, t) {
+    if (ended) return null;
+    if (t >= maxMs) { ended = true; return { type: 'end', reason: 'max' }; }
+    if (t < warmupMs) return null;
+    const dt = lastT === null ? 120 : Math.max(0, t - lastT);
+    lastT = t;
+    hist.push({ t, v });
+    while (hist.length && hist[0].t < t - floorWindowMs) hist.shift();
+    measured++;
+    const floor = Math.min(...hist.map(h => h.v));
+    const speakTh = Math.max(minTh, floor * 2.2);
+    const quietTh = Math.max(minTh * 0.75, floor * 1.8); // סף נמוך יותר לשקט, כדי שסוף מילה שקט לא ייחשב שתיקה
+    const loud = measured >= 3 && v > speakTh;
+    recent.push(loud);
+    if (recent.length > 6) recent.shift();
+    if (loud) { loudCount++; lastLoudT = t; }
+    if (!hadSpeech) {
+      if (loudCount >= 2) maybeSpeech = true;
+      if (recent.filter(Boolean).length >= 4) { hadSpeech = true; silentFor = 0; return { type: 'speech' }; }
+      if (maybeSpeech && t - lastLoudT >= 4000 && t >= 4500) { ended = true; return { type: 'end', reason: 'short' }; }
+      if (t >= noSpeechMs) { ended = true; return { type: 'end', reason: 'no-speech' }; }
+      return null;
+    }
+    if (v > quietTh) silentFor = 0; else silentFor += dt;
+    if (silentFor >= silenceMs) { ended = true; return { type: 'end', reason: 'silence' }; }
+    return null;
+  }
+  return { push, state };
+}
+
+/**
+ * מקליט משפט אחד בשקט ומזהה לבד מתי הדובר סיים (לפי עוצמת הקול).
+ * מחזיר { stop(), cancel(), done } כאשר done מתממש ל-{ blob, hadSpeech, maybeSpeech, reason, ms }.
+ * reason: 'silence' (הדובר סיים), 'short' (מילה קצרה ושקט), 'user' (לחיצה), 'no-speech' (לא דיברו), 'max', 'cancel'.
+ */
+export async function recordUtterance({ onLevel, onSpeech, silenceMs = 1800, noSpeechMs = 8000, maxMs = 30000 } = {}) {
+  let finished = false;
+  const det = createUtteranceDetector({ silenceMs, noSpeechMs, maxMs });
   const startedAt = Date.now();
   let resolveDone;
   const done = new Promise(r => { resolveDone = r; });
@@ -91,39 +136,21 @@ export async function recordUtterance({ onLevel, onSpeech, silenceMs = 1400, noS
     if (finished) return;
     finished = true;
     const blob = rec ? await rec.stop() : null;
-    resolveDone({ blob, hadSpeech, reason, ms: Date.now() - startedAt });
+    resolveDone({ ...det.state(), blob, reason, ms: Date.now() - startedAt });
   };
   rec = await startRecording({
     onLevel: v => {
       if (onLevel) onLevel(v);
       if (finished) return;
-      const now = Date.now();
-      const dt = last ? now - last : 120;
-      last = now;
-      const t = now - startedAt;
-      // החצי שנייה הראשונה מודדת את רעש הרקע (הערך הנמוך, למקרה שמתחילים לדבר מיד)
-      if (floor === null) {
-        calib.push(v);
-        if (calib.length >= 4) floor = Math.min(0.15, Math.min(...calib));
-        return;
-      }
-      const speakTh = Math.max(0.12, floor * 2.2);
-      if (v > speakTh) {
-        speechRun++;
-        silentFor = 0;
-        if (!hadSpeech && speechRun >= 2) { hadSpeech = true; if (onSpeech) onSpeech(); }
-      } else {
-        speechRun = 0;
-        if (hadSpeech) silentFor += dt;
-      }
-      if (hadSpeech && silentFor >= silenceMs) finish('silence');
-      else if (!hadSpeech && t >= noSpeechMs) finish('no-speech');
-      else if (t >= maxMs) finish('max');
+      const ev = det.push(v, Date.now() - startedAt);
+      if (!ev) return;
+      if (ev.type === 'speech') { if (onSpeech) onSpeech(); }
+      else finish(ev.reason);
     }
   });
   return {
     stop: () => finish('user'),
-    cancel: () => { if (finished) return; finished = true; rec.cancel(); resolveDone({ blob: null, hadSpeech, reason: 'cancel', ms: Date.now() - startedAt }); },
+    cancel: () => { if (finished) return; finished = true; rec.cancel(); resolveDone({ ...det.state(), blob: null, reason: 'cancel', ms: Date.now() - startedAt }); },
     done
   };
 }
