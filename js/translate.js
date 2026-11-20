@@ -466,6 +466,17 @@ function backups(text, from, to, signal) {
     .catch(e => { if (!signal.aborted) markFailed(b.host); throw e; }));
 }
 
+/** לבדיקת מוכנות: מתרגם משפט אחד דרך שירות מסוים בלבד (groq | mymemory | google). */
+export async function probeTranslator(service, text, from, to) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 10000);
+  try {
+    if (service === 'groq') return await viaGroq(text, from, to, ctrl.signal, {});
+    if (service === 'mymemory') return await viaMyMemory(text, from, to, ctrl.signal);
+    return await viaGoogle(text, from, to, ctrl.signal);
+  } finally { clearTimeout(t); }
+}
+
 /* ---------- הפונקציה הראשית ---------- */
 const MSG_OFFLINE = 'אין חיבור לאינטרנט. משפטים מהשיחון (משפטים מהירים ו"עוד משפטים") עובדים גם בלי רשת.';
 const MSG_UNAVAILABLE = 'שירותי התרגום לא זמינים כרגע. בדוק חיבור אינטרנט ונסה שוב, או השתמש במשפטים המהירים.';

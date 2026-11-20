@@ -699,6 +699,39 @@ with sync_playwright() as p:
     ok('no JS errors (listen + Groq)', not errs9, str(errs9))
     ctx9.close()
 
+    # 29. בדיקת מוכנות לטיול
+    rq = {'auth': 'ok'}
+    def groq_ready_route(route):
+        u = route.request.url
+        if rq['auth'] == 'bad':
+            route.fulfill(status=401, headers=CORS, body=json.dumps({'error': {'message': 'Invalid API Key', 'code': 'invalid_api_key'}})); return
+        if u.endswith('/models'):
+            route.fulfill(status=200, headers=CORS, body=json.dumps({'data': [{'id': x} for x in ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'whisper-large-v3-turbo', 'qwen/qwen3.8-27b']]})); return
+        body = json.loads(route.request.post_data or '{}')
+        route.fulfill(status=200, headers=CORS, body=json.dumps({'choices': [{'message': {'role': 'assistant', 'content': 'GQ:' + body['messages'][-1]['content']}}]}))
+    reset()
+    ctx10, page10, errs10 = new_page(b, "window.__groqDefault = 1; localStorage.setItem('tvt_groq_key','gsk_'+'a'.repeat(40));")
+    page10.route('https://api.groq.com/**', groq_ready_route)
+    ready_rows = lambda: page10.evaluate("[...document.querySelectorAll('#readyList > div')].map(r => { const s = r.querySelectorAll('span'); return [s[1].textContent, r.dataset.level, s[2].textContent]; })")
+    page10.click('#settingsBtn'); page10.wait_for_selector('#settings[open]')
+    page10.click('#readyBtn')
+    page10.wait_for_function("!document.getElementById('readyBtn').disabled && document.getElementById('readySummary').textContent.length > 6", timeout=15000)
+    rr = {t: (lv, h) for t, lv, h in ready_rows()}
+    lvl = lambda prefix: next((v for k, v in rr.items() if k.startswith(prefix)), (None, ''))
+    ok('readiness: 12 checks shown', len(rr) == 12, str(list(rr.keys())))
+    ok('readiness: Groq key, Whisper and camera OK', lvl('מפתח Groq')[0] == 'ok' and lvl('הקלטה שקטה')[0] == 'ok' and lvl('צילום')[0] == 'ok', str(rr)[:300])
+    ok('readiness: Groq translation really tested (sample sentence)', lvl('תרגום Groq')[0] == 'ok' and 'GQ:' in lvl('תרגום Groq')[1], lvl('תרגום Groq')[1])
+    ok('readiness: MyMemory OK, Google backup down = warning only', lvl('תרגום רגיל')[0] == 'ok' and lvl('גיבוי')[0] == 'warn')
+    ok('readiness: phrasebook counted for speaker B language', lvl('שיחון')[0] == 'ok' and 'משפטים' in lvl('שיחון')[1])
+    ok('readiness: summary says ready', page10.inner_text('#readySummary').startswith('✓ מוכן לטיול'), page10.inner_text('#readySummary'))
+    rq['auth'] = 'bad'
+    page10.click('#readyBtn')
+    page10.wait_for_function("!document.getElementById('readyBtn').disabled && document.getElementById('readySummary').textContent.length > 6", timeout=15000)
+    rr = {t: (lv, h) for t, lv, h in ready_rows()}
+    ok('readiness: bad key -> marked to fix, summary says what to fix', lvl('מפתח Groq')[0] == 'bad' and page10.inner_text('#readySummary').startswith('✗'), page10.inner_text('#readySummary'))
+    ok('no JS errors (readiness)', not errs10, str(errs10))
+    ctx10.close()
+
     # 18. אחסון פגום לא מפיל את האפליקציה
     bad = """try{localStorage.setItem('tvt_cache_v2','null');localStorage.setItem('tvt_langA','__proto__');
       localStorage.setItem('tvt_history','{"x":1}');localStorage.setItem('tvt_favs','[1,null,{"a":2}]');}catch(e){}"""

@@ -1,11 +1,11 @@
 import { LANGUAGES } from './languages.js';
 import { PHRASES, CATEGORY_LABELS, HOTEL_TEMPLATE } from './phrasebook.js';
-import { translate, getEmail, setEmail, clearCache, cacheSize, isLang, getServer, setServer, testServer, normalizeServerUrl, lastServerError, groqTranslateOn, setGroqTranslate, translateBatch } from './translate.js';
+import { translate, getEmail, setEmail, clearCache, cacheSize, isLang, getServer, setServer, testServer, normalizeServerUrl, lastServerError, groqTranslateOn, setGroqTranslate, translateBatch, probeTranslator } from './translate.js';
 import { speak, stopSpeaking, listen, listenLoop, unlockAudio, hasVoice, voicesLoaded, speechSupport, isSpeaking } from './speech.js';
 import { panelBStrings, PANEL_B_UI } from './ui-strings.js';
 import { startRecording, recordUtterance, recorderSupported, extFor } from './recorder.js';
 import { transcribe, getGroqKey, setGroqKey, looksLikeGroqKey, testGroqKey, groupSegments } from './transcribe.js';
-import { prepareImage, readAndTranslate } from './vision.js';
+import { prepareImage, readAndTranslate, availableModels, VISION_CANDIDATES } from './vision.js';
 import { getRates, normalizeCurrency, toILS, formatILS, RATES_CREDIT } from './currency.js';
 const panelBStringsAll = () => PANEL_B_UI;
 
@@ -1881,6 +1881,127 @@ async function saveServer() {
   }
 }
 sEl.save.addEventListener('click', saveServer);
+
+/* ---------- בדיקת מוכנות לטיול ---------- */
+const rEl = { btn: $('readyBtn'), box: $('readyResult'), list: $('readyList'), summary: $('readySummary') };
+const READY_ICON = { ok: ['✓', 'text-emerald-400'], warn: ['⚠', 'text-amber-300'], bad: ['✗', 'text-rose-400'], info: ['ℹ', 'text-slate-400'] };
+function readyRow(title) {
+  const row = document.createElement('div');
+  row.className = 'flex items-start gap-2 bg-slate-950/60 border border-slate-800 rounded-lg px-2.5 py-1.5';
+  const ic = document.createElement('span'); ic.className = 'shrink-0 w-4 text-center'; ic.textContent = '⏳';
+  const body = document.createElement('div'); body.className = 'flex flex-col min-w-0';
+  const t = document.createElement('span'); t.className = 'text-slate-200 font-semibold'; t.textContent = title;
+  const h = document.createElement('span'); h.className = 'text-slate-400 leading-relaxed break-words';
+  body.append(t, h); row.append(ic, body); rEl.list.appendChild(row);
+  return (level, hint) => {
+    const [sym, cls] = READY_ICON[level] || READY_ICON.info;
+    ic.textContent = sym; ic.className = `shrink-0 w-4 text-center font-bold ${cls}`;
+    row.dataset.level = level;
+    h.textContent = '';
+    if (hint && typeof hint === 'object') { // משפט ותרגום: כל אחד בכיוון שלו, כדי שעברית ואנגלית לא יתערבבו
+      const bd = t => { const x = document.createElement('bdi'); x.dir = 'auto'; x.textContent = `"${t}"`; return x; };
+      h.append(bd(hint.src), ' ← ', bd(hint.out));
+    } else h.textContent = hint || '';
+  };
+}
+const pause = ms => new Promise(r => setTimeout(r, ms));
+async function runReadiness() {
+  rEl.btn.disabled = true;
+  rEl.box.classList.remove('hidden');
+  rEl.list.textContent = '';
+  rEl.summary.className = 'font-semibold text-sm text-slate-300';
+  rEl.summary.textContent = 'בודק...';
+  const a = el.langA.value, bl = el.langB.value;
+  const nA = LANGUAGES[a].nameHe, nB = LANGUAGES[bl].nameHe;
+  const online = navigator.onLine !== false;
+  const key = getGroqKey();
+  const tasks = [];
+  const add = (title, fn) => {
+    const set = readyRow(title);
+    tasks.push(Promise.resolve().then(fn).then(([lv, hint]) => set(lv, hint), e => set('warn', (e && e.message) || 'לא ניתן לבדוק כרגע.')));
+  };
+  const needNet = ['info', 'ייבדק כשיהיה אינטרנט.'];
+  const keyCheck = online && key ? testGroqKey(key) : null;
+  if (keyCheck) keyCheck.catch(() => {});
+  const modelIds = keyCheck ? keyCheck.then(() => availableModels(key, true)).catch(() => null) : Promise.resolve(null);
+
+  add('חיבור לאינטרנט', () => (online ? ['ok', 'יש חיבור.'] : ['bad', 'אין אינטרנט. השיחון והמועדפים עובדים גם בלי רשת.']));
+  add('פתיחה בלי אינטרנט', async () => {
+    let cached = false;
+    try {
+      if (window.caches) for (const k of await caches.keys()) if (/^tvt-/.test(k) && await (await caches.open(k)).match('./index.html')) { cached = true; break; }
+    } catch { /* ignore */ }
+    const ctl = 'serviceWorker' in navigator && navigator.serviceWorker.controller;
+    return ctl && cached ? ['ok', 'האפליקציה שמורה בטלפון ונפתחת גם בלי רשת.'] : ['warn', 'עוד לא נשמרה בטלפון. פתחו אותה פעם אחת עם אינטרנט, סגרו ופתחו שוב.'];
+  });
+  add('מותקנת כאפליקציה', () => ((window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone
+    ? ['ok', 'מותקנת במסך הבית.'] : ['info', 'לא חובה. התקנה למסך הבית נותנת פתיחה מהירה ואת "שתף אל המתורגמן".']));
+  add('מיקרופון', async () => {
+    try {
+      const p = await navigator.permissions.query({ name: 'microphone' });
+      if (p.state === 'granted') return ['ok', 'מאושר.'];
+      if (p.state === 'denied') return ['bad', 'חסום. בדפדפן: הגדרות האתר ← מיקרופון ← לאפשר.'];
+      return ['warn', 'הדפדפן יבקש אישור בפעם הראשונה. כדאי ללחוץ עכשיו על מיקרופון פעם אחת ולאשר.'];
+    } catch { return ['info', 'הדפדפן לא מאפשר לבדוק. לחצו על מיקרופון פעם אחת כדי לוודא.']; }
+  });
+  add(`קולות הקראה (${nA} ו${nB})`, async () => {
+    if (!speechSupport.tts) return ['bad', 'הדפדפן לא תומך בהקראה.'];
+    if (!voicesLoaded()) await pause(800);
+    const miss = [...new Set([a, bl])].filter(k => !hasVoice(k)).map(k => LANGUAGES[k].nameHe);
+    return miss.length ? ['warn', `חסר קול ב${miss.join(' וב')}. איך מתקינים: "קולות הקראה במכשיר" למטה.`] : ['ok', 'יש קול לשתי השפות.'];
+  });
+  add(`שיחון בלי רשת (${nB})`, () => {
+    const n = PHRASES.filter(p => p[a] && p[bl]).length;
+    return n ? ['ok', `${n} משפטים מוכנים שעובדים בלי אינטרנט.`] : ['warn', `אין שיחון מוכן ל${nB}. התרגום יעבוד רק עם אינטרנט.`];
+  });
+  add('מפתח Groq', async () => {
+    if (!key) return ['warn', 'אין מפתח. בלעדיו אין הקלטה שקטה, צילום ותרגום ב-Groq. התרגום הרגיל עובד.'];
+    if (!online) return needNet;
+    try { await keyCheck; return ['ok', 'המפתח עובד.']; } catch (e) { return ['bad', e.message || 'המפתח לא תקין.']; }
+  });
+  add('הקלטה שקטה (Whisper)', async () => {
+    if (!key) return ['info', 'צריך מפתח Groq.'];
+    if (!online) return needNet;
+    const ids = await modelIds;
+    if (!ids) return ['warn', 'לא ניתן לבדוק (המפתח או החיבור).'];
+    return ids.some(id => /^whisper-large-v3/.test(id)) ? ['ok', 'זמין.'] : ['warn', 'Groq לא מציע כרגע מודל Whisper.'];
+  });
+  add('צילום ותרגום', async () => {
+    if (!key) return ['info', 'צריך מפתח Groq.'];
+    if (!online) return needNet;
+    const ids = await modelIds;
+    if (!ids) return ['warn', 'לא ניתן לבדוק (המפתח או החיבור).'];
+    const m = VISION_CANDIDATES.find(x => ids.includes(x));
+    return m ? ['ok', 'מודל קריאת תמונות זמין.'] : ['warn', 'אין כרגע מודל מוכר לקריאת תמונות. האפליקציה תנסה לבחור אחר.'];
+  });
+  const sample = a === 'he' ? 'סליחה, איפה התחנה הקרובה?' : (LANGUAGES[a].sample || 'Hello').slice(0, 80);
+  const probe = async (service, labelFail) => {
+    if (!online) return needNet;
+    if (a === bl) return ['info', 'בחרו שפה שונה לדובר ב׳ כדי לבדוק.'];
+    try { const out = await probeTranslator(service, sample, a, bl); return ['ok', { src: sample, out }]; }
+    catch (e) {
+      if (e && (e.status === 401 || e.status === 403)) return ['bad', 'המפתח לא תקין.'];
+      if (e && e.status === 429) return ['warn', 'הגעת למגבלה של היום. מחר זה יתאפס, ובינתיים יש שירותים אחרים.'];
+      return ['warn', labelFail];
+    }
+  };
+  add(`תרגום Groq (${nA} ← ${nB})`, async () => {
+    if (!key) return ['info', 'צריך מפתח Groq.'];
+    if (!groqTranslateOn()) return ['info', 'כבוי בהגדרות (למטה, ליד מפתח Groq).'];
+    return probe('groq', 'לא זמין כרגע. התרגום יעבור לשירותים הרגילים.');
+  });
+  add('תרגום רגיל (MyMemory)', () => probe('mymemory', 'לא זמין כרגע (אולי נגמרה המכסה היומית). יש שירותים אחרים.'));
+  add('גיבוי (Google)', () => probe('google', 'לא זמין כרגע. זה רק גיבוי.'));
+
+  await Promise.allSettled(tasks);
+  const levels = [...rEl.list.children].map(r => r.dataset.level);
+  const bad = levels.filter(l => l === 'bad').length, warn = levels.filter(l => l === 'warn').length;
+  rEl.summary.className = `font-semibold text-sm ${bad ? 'text-rose-400' : 'text-emerald-400'}`;
+  rEl.summary.textContent = bad ? `✗ יש ${bad === 1 ? 'דבר אחד' : bad + ' דברים'} לתקן לפני הטיול${warn ? `, ועוד ${warn} הערות` : ''}.`
+    : warn ? `✓ מוכן לטיול, עם ${warn === 1 ? 'הערה אחת' : warn + ' הערות'}.` : '✓ הכל מוכן לטיול!';
+  rEl.btn.disabled = false;
+}
+rEl.btn.addEventListener('click', runReadiness);
 
 const gEl = { input: $('optGroqKey'), save: $('saveGroqBtn'), status: $('groqStatus') };
 const groqTrBox = $('optGroqTranslate');

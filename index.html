@@ -13,7 +13,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="מתורגמן" />
-  <link rel="stylesheet" href="css/styles.css?v=33ccfad80c" />
+  <link rel="stylesheet" href="css/styles.css?v=ae0e885b93" />
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
 
@@ -446,6 +446,17 @@
         <button id="closeSettings" type="button" aria-label="סגור" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700">✕</button>
       </div>
 
+      <div class="flex flex-col gap-2">
+        <button id="readyBtn" type="button" class="w-full py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 disabled:opacity-60 text-white font-semibold transition">🧳 בדיקת מוכנות לטיול</button>
+        <div id="readyResult" class="hidden">
+          <div class="flex flex-col gap-1.5 text-xs">
+            <p id="readySummary" class="font-semibold text-sm" aria-live="polite"></p>
+            <div id="readyList" class="flex flex-col gap-1"></div>
+            <p class="text-slate-500 leading-relaxed">כדאי להריץ לפני הטיסה, עם השפה של היעד בצד של דובר ב׳.</p>
+          </div>
+        </div>
+      </div>
+
       <div class="flex flex-col gap-1.5">
         <span class="text-slate-300">קולות הקראה במכשיר</span>
         <div id="voiceInfo" class="text-xs text-slate-400 leading-relaxed flex flex-col gap-1.5"></div>
@@ -563,18 +574,18 @@
   <!-- כתובת עם גרסה לכל קובץ, כדי שהדפדפן לעולם לא יערבב קובץ ישן עם חדש. נכתב אוטומטית ע"י tools/stamp-sw.py -->
   <script type="importmap">
   { "imports": {
-    "./js/app.js": "./js/app.js?v=33ccfad80c",
-    "./js/languages.js": "./js/languages.js?v=33ccfad80c",
-    "./js/phrasebook.js": "./js/phrasebook.js?v=33ccfad80c",
-    "./js/translate.js": "./js/translate.js?v=33ccfad80c",
-    "./js/speech.js": "./js/speech.js?v=33ccfad80c",
-    "./js/recorder.js": "./js/recorder.js?v=33ccfad80c",
-    "./js/transcribe.js": "./js/transcribe.js?v=33ccfad80c",
-    "./js/vision.js": "./js/vision.js?v=33ccfad80c",
-    "./js/currency.js": "./js/currency.js?v=33ccfad80c",
-    "./js/ui-strings.js": "./js/ui-strings.js?v=33ccfad80c"
+    "./js/app.js": "./js/app.js?v=ae0e885b93",
+    "./js/languages.js": "./js/languages.js?v=ae0e885b93",
+    "./js/phrasebook.js": "./js/phrasebook.js?v=ae0e885b93",
+    "./js/translate.js": "./js/translate.js?v=ae0e885b93",
+    "./js/speech.js": "./js/speech.js?v=ae0e885b93",
+    "./js/recorder.js": "./js/recorder.js?v=ae0e885b93",
+    "./js/transcribe.js": "./js/transcribe.js?v=ae0e885b93",
+    "./js/vision.js": "./js/vision.js?v=ae0e885b93",
+    "./js/currency.js": "./js/currency.js?v=ae0e885b93",
+    "./js/ui-strings.js": "./js/ui-strings.js?v=ae0e885b93"
   } }
   </script>
-  <script type="module" src="js/app.js?v=33ccfad80c"></script>
+  <script type="module" src="js/app.js?v=ae0e885b93"></script>
 </body>
 </html>
