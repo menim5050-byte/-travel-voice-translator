@@ -2,13 +2,11 @@
 // משתמש באותו מפתח Groq האישי שנשמר בטלפון.
 import { getGroqKey, GROQ_BASE } from './transcribe.js';
 
-// Groq מחליפה מודלים מדי פעם (Llama 4 Scout הושבת ב-17.7.2026). לכן לא נועלים שם אחד:
+// Groq מחליפה מודלים מדי פעם (Llama 4 Scout הושבת ב-17.7.2026, Qwen 3.6 ב-14.9.2026). לכן לא נועלים שם אחד:
 // בודקים מול Groq אילו מודלים קיימים עכשיו, ובוחרים לפי הסדר. מודל שהחזיר "לא קיים" מדולג.
 export const VISION_CANDIDATES = [
   'qwen/qwen3.8-27b',
-  'qwen/qwen3.6-27b',
-  'meta-models/muse-spark-open',
-  'meta-llama/llama-4-scout-17b-16e-instruct'
+  'meta-models/muse-spark-open'
 ];
 const MODELS_CACHE = 'tvt_groq_models';
 const MODELS_MAX_AGE = 24 * 60 * 60 * 1000;

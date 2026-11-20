@@ -387,7 +387,7 @@ with sync_playwright() as p:
         if u.endswith('/models'):
             ok_key = route.request.headers.get('authorization', '').endswith('a' * 40)
             route.fulfill(status=200 if ok_key else 401, headers=CORS, body=json.dumps({'data': [
-                {'id': 'qwen/qwen3.8-27b', 'active': True}, {'id': 'qwen/qwen3.6-27b', 'active': True}, {'id': 'whisper-large-v3-turbo', 'active': True}]})); return
+                {'id': 'qwen/qwen3.8-27b', 'active': True}, {'id': 'meta-models/muse-spark-open', 'active': True}, {'id': 'whisper-large-v3-turbo', 'active': True}]})); return
         body = json.loads(route.request.post_data or '{}')
         vis['calls'].append(body)
         if vis['mode'] == 'gone' and body.get('model') == 'qwen/qwen3.8-27b':
@@ -440,7 +440,7 @@ with sync_playwright() as p:
     page5.evaluate("document.getElementById('galleryInput').value = ''"); page5.set_input_files('#galleryInput', img_path)
     wait_calls(n + 2)
     page5.wait_for_function("!document.getElementById('camResult').classList.contains('hidden')", timeout=8000)
-    ok('camera: retired model -> switches to the next available one', [c['model'] for c in vis['calls'][n:n + 2]] == ['qwen/qwen3.8-27b', 'qwen/qwen3.6-27b'] and 'אורז מוקפץ' in page5.inner_text('#camTranslation'), str([c['model'] for c in vis['calls'][n:]]))
+    ok('camera: retired model -> switches to the next available one', [c['model'] for c in vis['calls'][n:n + 2]] == ['qwen/qwen3.8-27b', 'meta-models/muse-spark-open'] and 'אורז מוקפץ' in page5.inner_text('#camTranslation'), str([c['model'] for c in vis['calls'][n:]]))
     vis['mode'] = '401'; n = len(vis['calls'])
     page5.evaluate("document.getElementById('galleryInput').value = ''"); page5.set_input_files('#galleryInput', img_path)
     wait_calls(n + 1)
@@ -620,6 +620,28 @@ with sync_playwright() as p:
     page8.fill('#inputA', 'איפה יש כאן בית מרקחת פתוח'); page8.click('#sendBtnA')
     page8.wait_for_function("document.getElementById('outputA').textContent.startsWith('GQ:')", timeout=8000)
     ok('groq translate: busy model -> second model, still Groq', [x['model'] for x in gq['calls'][n:]] == ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'] and not mm_calls)
+    gq['mode'] = 'ok'
+    page8.click('#genderBBtn'); page8.wait_for_timeout(100)
+    ok('gender chip: tap -> the other side is a man', page8.inner_text('#genderBBtn') == '👨')
+    page8.click('#genderBBtn'); page8.wait_for_timeout(100)
+    ok('gender chip: second tap -> a woman', page8.inner_text('#genderBBtn') == '👩')
+    page8.click('#settingsBtn'); page8.wait_for_selector('#settings[open]')
+    ok('gender: settings show the chip choice', page8.input_value('#optGenderB') == 'female')
+    page8.select_option('#optGenderA', 'male'); page8.click('#closeSettings')
+    page8.fill('#inputA', 'אתה יכול לעזור לי עם המזוודה'); page8.click('#sendBtnA')
+    page8.wait_for_function("document.getElementById('outputA').textContent === 'GQ:אתה יכול לעזור לי עם המזוודה'", timeout=8000)
+    sysmsg = gq['calls'][-1]['messages'][0]['content']
+    ok('gender: "a man speaking to a woman" goes into the prompt', 'saying this message is a man' in sysmsg and 'spoken to is a woman' in sysmsg, sysmsg[-300:])
+    ok('context: the previous sentences are sent, for context only', '- Same person: איפה יש כאן בית מרקחת פתוח' in sysmsg and 'do NOT translate' in sysmsg)
+    page8.fill('#inputB', 'Of course, give it to me'); page8.click('#sendBtnB')
+    page8.wait_for_function("document.getElementById('outputB').textContent === 'GQ:Of course, give it to me'", timeout=8000)
+    sysmsg = gq['calls'][-1]['messages'][0]['content']
+    ok('gender + context from the other side: a woman answering a man', 'saying this message is a woman' in sysmsg and 'spoken to is a man' in sysmsg
+       and '- The other person: אתה יכול לעזור לי עם המזוודה' in sysmsg and 'from English into Hebrew' in sysmsg, sysmsg[-300:])
+    n = len(gq['calls'])
+    page8.click('#genderBBtn'); page8.wait_for_timeout(100)
+    page8.fill('#inputA', 'אתה יכול לעזור לי עם המזוודה'); page8.click('#sendBtnA'); page8.wait_for_timeout(1500)
+    ok('gender changed -> the same sentence is translated again, not from memory', len(gq['calls']) == n + 1 and 'spoken to is' not in gq['calls'][-1]['messages'][0]['content'])
     gq['mode'] = 'chatty'
     page8.fill('#inputA', 'כמה עולה כרטיס לתחנה המרכזית'); page8.click('#sendBtnA')
     page8.wait_for_function("document.getElementById('outputA').textContent.startsWith('MM:')", timeout=8000)
@@ -638,6 +660,44 @@ with sync_playwright() as p:
     ok('groq translate: switched off in settings -> not used', len(gq['calls']) == n and page8.evaluate("JSON.parse(localStorage.getItem('tvt_groq_translate'))") is False)
     ok('no JS errors (groq translate)', not errs8, str(errs8))
     ctx8.close()
+
+    # 28. מצב האזנה עם Groq: כל ההקלטה מתורגמת בבקשה אחת, ואם התשובה לא תקינה, קטע-קטע
+    bq = {'mode': 'ok', 'calls': []}
+    def groq_listen_route(route):
+        u = route.request.url
+        if u.endswith('/models'):
+            route.fulfill(status=200, headers=CORS, body=json.dumps({'data': [{'id': 'openai/gpt-oss-120b'}, {'id': 'openai/gpt-oss-20b'}, {'id': 'whisper-large-v3-turbo'}]})); return
+        if '/audio/transcriptions' in u:
+            route.fulfill(status=200, headers=CORS, body=json.dumps(SEGS)); return
+        body = json.loads(route.request.post_data or '{}'); bq['calls'].append(body)
+        if 'JSON array' in body['messages'][0]['content']:
+            items = json.loads(body['messages'][-1]['content'])
+            t = ['only one'] if bq['mode'] == 'bad' else ['GB:' + x for x in items]
+            out = json.dumps({'t': t})
+        else:
+            out = 'GQ:' + body['messages'][-1]['content']
+        route.fulfill(status=200, headers=CORS, body=json.dumps({'choices': [{'message': {'role': 'assistant', 'content': out}}]}))
+    reset()
+    ctx9, page9, errs9 = new_page(b, "window.__groqDefault = 1; localStorage.setItem('tvt_groq_key','gsk_'+'a'.repeat(40));" + MEDIA)
+    page9.route('https://api.groq.com/**', groq_listen_route)
+    tap9 = lambda sel: page9.evaluate(f"document.querySelector('{sel}').click()")
+    def listen_once():
+        page9.evaluate("document.querySelector('#listenDurations button').dataset.sec='2'")
+        page9.click('#listenDurations button >> nth=0')
+        tap9('#listenStartBtn')
+        page9.wait_for_function("document.getElementById('listenStatus').textContent.includes('הסתיים')", timeout=12000)
+        return page9.inner_text('#listenRows')
+    page9.click('#listenOpenBtn'); page9.wait_for_timeout(150)
+    rows = listen_once()
+    c = bq['calls'][0] if bq['calls'] else {}
+    ok('listen + Groq: whole recording translated in ONE request', len(bq['calls']) == 1 and 'GB:Bună ziua, bine ați venit la castel.' in rows and 'GB:Turul durează aproximativ o oră.' in rows and not mm_calls, rows[:120].replace('\n', ' | '))
+    ok('listen + Groq: Romanian -> Hebrew, both segments sent together', 'from Romanian into Hebrew' in c.get('messages', [{}])[0].get('content', '') and json.loads(c['messages'][1]['content']) == ['Bună ziua, bine ați venit la castel.', 'Turul durează aproximativ o oră.'])
+    bq['mode'] = 'bad'; bq['calls'].clear()
+    if page9.is_visible('#listenSetupToggle'): page9.click('#listenSetupToggle')
+    rows = listen_once()
+    ok('listen + Groq: broken batch answer -> each segment translated on its own', len(bq['calls']) == 3 and 'GQ:Bună ziua, bine ați venit la castel.' in rows and 'GQ:Turul durează aproximativ o oră.' in rows, rows[:120].replace('\n', ' | '))
+    ok('no JS errors (listen + Groq)', not errs9, str(errs9))
+    ctx9.close()
 
     # 18. אחסון פגום לא מפיל את האפליקציה
     bad = """try{localStorage.setItem('tvt_cache_v2','null');localStorage.setItem('tvt_langA','__proto__');

@@ -1,6 +1,6 @@
 import { LANGUAGES } from './languages.js';
 import { PHRASES, CATEGORY_LABELS, HOTEL_TEMPLATE } from './phrasebook.js';
-import { translate, getEmail, setEmail, clearCache, cacheSize, isLang, getServer, setServer, testServer, normalizeServerUrl, lastServerError, groqTranslateOn, setGroqTranslate } from './translate.js';
+import { translate, getEmail, setEmail, clearCache, cacheSize, isLang, getServer, setServer, testServer, normalizeServerUrl, lastServerError, groqTranslateOn, setGroqTranslate, translateBatch } from './translate.js';
 import { speak, stopSpeaking, listen, listenLoop, unlockAudio, hasVoice, voicesLoaded, speechSupport, isSpeaking } from './speech.js';
 import { panelBStrings, PANEL_B_UI } from './ui-strings.js';
 import { startRecording, recordUtterance, recorderSupported, extFor } from './recorder.js';
@@ -224,6 +224,31 @@ function speakText(text, langKey, { auto = false } = {}) {
 /* ---------- היסטוריה ומועדפים ---------- */
 const SRC_LABEL = { azure: '', groq: '', phrasebook: 'שיחון', cache: 'זיכרון', mymemory: '', google: 'גיבוי Google', lingva: 'גיבוי', same: '', favorite: 'מועדף', listen: '', camera: '' };
 const AUTO_LANG = { nameHe: 'זוהתה אוטומטית', native: '', dir: 'auto', speechCode: '' };
+
+/* זכר ונקבה בתרגום (דובר א׳ = בעל הטלפון, דובר ב׳ = הצד השני) */
+const GENDER_KEY = 'tvt_gender';
+const okGender = v => (v === 'male' || v === 'female' ? v : '');
+const gender = (() => { const g = loadJSON(GENDER_KEY, {}) || {}; return { A: okGender(g.A), B: okGender(g.B) }; })();
+function setGender(speaker, v) {
+  gender[speaker] = okGender(v); saveJSON(GENDER_KEY, gender); renderGender();
+  state.lastSourceText.A = state.lastSourceText.B = ''; // אותו משפט יתורגם מחדש, לפי המין החדש
+}
+function renderGender() {
+  const b = $('genderBBtn');
+  b.textContent = gender.B === 'male' ? '👨' : gender.B === 'female' ? '👩' : '👤 ?';
+  b.title = `הצד השני: ${gender.B === 'male' ? 'גבר' : gender.B === 'female' ? 'אישה' : 'לא ידוע'} (לחיצה מחליפה)`;
+  $('optGenderA').value = gender.A;
+  $('optGenderB').value = gender.B;
+}
+// מה ש-Groq צריך כדי לתרגם נכון: מי מדבר אל מי, ומה נאמר רגע לפני (עד 3 משפטים מ-15 הדקות האחרונות)
+function translateOpts(speaker) {
+  const now = Date.now();
+  const context = state.history
+    .filter(h => h && (h.speaker === 'A' || h.speaker === 'B') && h.source !== 'listen' && h.source !== 'camera' && now - h.ts < 15 * 60000)
+    .slice(0, 3).reverse()
+    .map(h => ({ who: h.speaker === speaker ? 'self' : 'other', text: String(h.originalText || '') }));
+  return { gender: { speaker: gender[speaker], listener: gender[other(speaker)] }, context };
+}
 const langCfg = k => (isLang(k) ? LANGUAGES[k] : AUTO_LANG);
 
 const validEntry = e => e && typeof e === 'object' && (isLang(e.sourceLang) || e.sourceLang === 'auto') && isLang(e.targetLang) &&
@@ -380,7 +405,7 @@ async function runTranslation(speaker, text, from, to, { forceSpeak = false, rem
   setOutputStatus(speaker, 'translating');
   reveal(speaker);
   try {
-    const r = await translate(text, from, to, { onBackup: () => { if (current()) setOutputStatus(speaker, 'backup'); } });
+    const r = await translate(text, from, to, { onBackup: () => { if (current()) setOutputStatus(speaker, 'backup'); }, ...translateOpts(speaker) });
     if (!current()) return;
     state.pending[speaker] = false;
     finishResult(speaker, text, rememberLang, r.text, to, r.source, from, forceSpeak);
@@ -1210,6 +1235,25 @@ async function translateListenRow(row) {
   if (lm.historyTs) saveListenToHistory(); // תרגום שהושלם אחרי הסיום מתעדכן גם בהיסטוריה
 }
 
+// כל ההקלטה בכמה בקשות גדולות ל-Groq (המודל רואה את כל השיחה). מה שלא הצליח מתורגם אחר כך קטע-קטע.
+async function translateListenBatches(rows, session) {
+  if (!rows.length || rows[0].lang === rows[0].target) return;
+  const batches = [];
+  let cur = [], size = 0;
+  rows.forEach(r => {
+    if (cur.length && (size + r.src.length > 2000 || cur.length >= 30)) { batches.push(cur); cur = []; size = 0; }
+    cur.push(r); size += r.src.length;
+  });
+  if (cur.length) batches.push(cur);
+  for (const batch of batches) {
+    if (session !== lm.session) return;
+    const outs = await translateBatch(batch.map(r => r.src), batch[0].lang, batch[0].target);
+    if (!outs) return; // Groq לא זמין: ממשיכים בדרך הרגילה
+    if (session !== lm.session) return;
+    batch.forEach((r, i) => { r.tr = outs[i]; r.status = 'ok'; renderListenRow(r); });
+  }
+}
+
 function addListenRow(text) {
   const row = { src: text, tr: '', status: 'pending', lang: lm.lang, target: lm.target, session: lm.session, el: null };
   lm.rows.push(row);
@@ -1387,7 +1431,9 @@ async function transcribeLast(session) {
     const langName = known ? LANGUAGES[r.langKey].nameHe : (r.detectedName || 'לא מוכרת');
     if (known) {
       lEl.status.textContent = `מתרגם ${groups.length} קטעים מ${langName}...`;
-      await runPool(lm.rows, 3, row => translateListenRow(row));
+      await translateListenBatches(lm.rows, session);
+      if (session !== lm.session) return;
+      await runPool(lm.rows.filter(x => x.status === 'pending'), 3, row => translateListenRow(row));
       if (session !== lm.session) return;
     }
     saveListenToHistory();
@@ -1840,6 +1886,10 @@ const gEl = { input: $('optGroqKey'), save: $('saveGroqBtn'), status: $('groqSta
 const groqTrBox = $('optGroqTranslate');
 groqTrBox.checked = groqTranslateOn();
 groqTrBox.addEventListener('change', () => setGroqTranslate(groqTrBox.checked));
+$('optGenderA').addEventListener('change', e => setGender('A', e.target.value));
+$('optGenderB').addEventListener('change', e => setGender('B', e.target.value));
+$('genderBBtn').addEventListener('click', () => setGender('B', gender.B === '' ? 'male' : gender.B === 'male' ? 'female' : ''));
+renderGender();
 function setGroqStatus(cls, msg) { gEl.status.className = `text-xs min-h-[1rem] ${cls}`; gEl.status.textContent = msg; }
 async function saveGroq() {
   const v = gEl.input.value.trim();

@@ -13,7 +13,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="מתורגמן" />
-  <link rel="stylesheet" href="css/styles.css?v=05e01c983c" />
+  <link rel="stylesheet" href="css/styles.css?v=33ccfad80c" />
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
 
@@ -192,6 +192,7 @@
           <div class="flex items-center gap-2">
             <span class="w-3 h-3 rounded-full bg-emerald-400"></span>
             <h2 id="titleB" class="font-semibold text-base text-white">דובר ב׳</h2>
+            <button id="genderBBtn" type="button" class="hit text-xs leading-none rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-2 py-1 text-slate-300 transition" title="הצד השני: גבר או אישה (לתרגום נכון של זכר ונקבה)" aria-label="הצד השני: גבר או אישה">👤 ?</button>
           </div>
           <select id="langB" aria-label="שפת דובר ב׳" class="bg-slate-800 border border-slate-700 text-slate-100 text-sm rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500">
             <option value="he">🇮🇱 עברית (עברית)</option>
@@ -461,6 +462,23 @@
       </div>
 
       <div class="border-t border-slate-800 pt-3 flex flex-col gap-1.5">
+        <span class="text-slate-300">זכר ונקבה בתרגום</span>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="flex flex-col gap-1 text-xs text-slate-400">אני (דובר א׳)
+            <select id="optGenderA" class="bg-slate-950 border border-slate-700 rounded-lg px-2 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="">לא צוין</option><option value="male">גבר</option><option value="female">אישה</option>
+            </select>
+          </label>
+          <label class="flex flex-col gap-1 text-xs text-slate-400">הצד השני (דובר ב׳)
+            <select id="optGenderB" class="bg-slate-950 border border-slate-700 rounded-lg px-2 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="">לא ידוע</option><option value="male">גבר</option><option value="female">אישה</option>
+            </select>
+          </label>
+        </div>
+        <p class="text-xs text-slate-400 leading-relaxed">עוזר לתרגום ב-Groq לבחור נכון "אתה" או "את", "מוכן" או "מוכנה", ובתאית <span lang="th" dir="ltr" class="inline-block">ครับ</span> או <span lang="th" dir="ltr" class="inline-block">ค่ะ</span>. את הצד השני אפשר להחליף גם בכפתור 👤 ליד "דובר ב׳". התרגום משתמש גם במשפטים האחרונים בשיחה, כדי להבין למה מתכוונים ב"זה", "שם" או "הוא".</p>
+      </div>
+
+      <div class="border-t border-slate-800 pt-3 flex flex-col gap-1.5">
         <label for="optEmail" class="text-slate-300">אימייל להגדלת מכסת התרגום (לא חובה)</label>
         <div class="flex gap-2">
           <input id="optEmail" type="email" dir="ltr" autocomplete="email" placeholder="name@example.com" class="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
@@ -468,7 +486,7 @@
         </div>
         <p id="emailStatus" class="text-xs min-h-[1rem]" aria-live="polite"></p>
         <p class="text-xs text-slate-400 leading-relaxed">ללא אימייל המכסה החינמית היא כ-5,000 תווים ביום, ועם אימייל כ-50,000. נשמר במכשיר בלבד ונשלח רק לשירות MyMemory.</p>
-        <p class="text-xs text-slate-500 leading-relaxed">פרטיות: הטקסט לתרגום נשלח לשירותי התרגום (MyMemory, ובגיבוי Google ו-Lingva), וזיהוי הדיבור עובר דרך Google. ההיסטוריה, המועדפים והמלון נשמרים רק בטלפון.</p>
+        <p class="text-xs text-slate-500 leading-relaxed">פרטיות: הטקסט לתרגום נשלח לשירותי התרגום (Groq כשיש מפתח, MyMemory, ובגיבוי Google ו-Lingva), וזיהוי הדיבור עובר דרך Google. ההיסטוריה, המועדפים והמלון נשמרים רק בטלפון.</p>
       </div>
 
       <div class="border-t border-slate-800 pt-3 flex flex-col gap-1.5">
@@ -545,18 +563,18 @@
   <!-- כתובת עם גרסה לכל קובץ, כדי שהדפדפן לעולם לא יערבב קובץ ישן עם חדש. נכתב אוטומטית ע"י tools/stamp-sw.py -->
   <script type="importmap">
   { "imports": {
-    "./js/app.js": "./js/app.js?v=05e01c983c",
-    "./js/languages.js": "./js/languages.js?v=05e01c983c",
-    "./js/phrasebook.js": "./js/phrasebook.js?v=05e01c983c",
-    "./js/translate.js": "./js/translate.js?v=05e01c983c",
-    "./js/speech.js": "./js/speech.js?v=05e01c983c",
-    "./js/recorder.js": "./js/recorder.js?v=05e01c983c",
-    "./js/transcribe.js": "./js/transcribe.js?v=05e01c983c",
-    "./js/vision.js": "./js/vision.js?v=05e01c983c",
-    "./js/currency.js": "./js/currency.js?v=05e01c983c",
-    "./js/ui-strings.js": "./js/ui-strings.js?v=05e01c983c"
+    "./js/app.js": "./js/app.js?v=33ccfad80c",
+    "./js/languages.js": "./js/languages.js?v=33ccfad80c",
+    "./js/phrasebook.js": "./js/phrasebook.js?v=33ccfad80c",
+    "./js/translate.js": "./js/translate.js?v=33ccfad80c",
+    "./js/speech.js": "./js/speech.js?v=33ccfad80c",
+    "./js/recorder.js": "./js/recorder.js?v=33ccfad80c",
+    "./js/transcribe.js": "./js/transcribe.js?v=33ccfad80c",
+    "./js/vision.js": "./js/vision.js?v=33ccfad80c",
+    "./js/currency.js": "./js/currency.js?v=33ccfad80c",
+    "./js/ui-strings.js": "./js/ui-strings.js?v=33ccfad80c"
   } }
   </script>
-  <script type="module" src="js/app.js?v=05e01c983c"></script>
+  <script type="module" src="js/app.js?v=33ccfad80c"></script>
 </body>
 </html>
