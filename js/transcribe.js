@@ -7,6 +7,9 @@ export const GROQ_BASE = 'https://api.groq.com/openai/v1';
 export const GROQ_MODEL = 'whisper-large-v3-turbo';
 // אם Groq תשבית את המודל הראשי, עוברים לבא ברשימה
 const WHISPER_MODELS = [GROQ_MODEL, 'whisper-large-v3'];
+// בשיחה מעדיפים את המודל המדויק יותר. לפי התיעוד של Groq הוא מיועד ליישומים שרגישים לטעויות ומדברים כמה שפות
+// (שיעור שגיאות כ-10.3% מול 12% ב-turbo), ומגבלות השימוש החינמיות של שני המודלים זהות. הקלטות ארוכות נשארות על turbo.
+export const CONVERSATION_MODELS = ['whisper-large-v3', GROQ_MODEL];
 
 export function getGroqKey() { try { return localStorage.getItem(KEY) || ''; } catch { return ''; } }
 export function setGroqKey(v) { try { v ? localStorage.setItem(KEY, v) : localStorage.removeItem(KEY); } catch { /* ignore */ } }
@@ -23,6 +26,18 @@ export function detectedLangKey(name) {
   const n = String(name || '').trim().toLowerCase();
   if (Object.prototype.hasOwnProperty.call(LANGUAGES, n)) return n; // כבר קוד ("ro")
   return NAME_TO_KEY[n] || null;
+}
+
+/**
+ * האם קטע תמלול חשוד: כנראה לא דיבור אמיתי (Whisper נוטה "להמציא" טקסט מרעש), או חזרה על אותן מילים.
+ * הספים הם ברירות המחדל של Whisper בקוד הפתוח: no_speech 0.6 יחד עם avg_logprob מתחת ל-1-, ו-compression_ratio מעל 2.4.
+ * Groq מחזיר את הנתונים האלה לכל קטע כשמבקשים verbose_json.
+ */
+export function isDubiousSegment(s) {
+  const nsp = Number(s && s.no_speech_prob), lp = Number(s && s.avg_logprob), cr = Number(s && s.compression_ratio);
+  if (Number.isFinite(nsp) && Number.isFinite(lp) && nsp > 0.6 && lp < -1) return true;
+  if (Number.isFinite(cr) && cr > 2.4) return true;
+  return false;
 }
 
 function errorFor(status, body) {
@@ -49,11 +64,12 @@ export async function testGroqKey(key) {
  * שולח הקלטה לתמלול. langKey = קוד שפה, או 'auto' לזיהוי אוטומטי.
  * מחזיר { text, langKey (שזוהתה או שנבחרה), segments: [{ start, end, text }] }.
  */
-export async function transcribe(blob, { langKey = 'auto', filename = 'recording.webm', signal } = {}) {
+export async function transcribe(blob, { langKey = 'auto', filename = 'recording.webm', signal, models = WHISPER_MODELS, filterDubious = false } = {}) {
   const key = getGroqKey();
   if (!key) { const e = new Error('חסר מפתח Groq. הוסף אותו בהגדרות.'); e.code = 'no-key'; throw e; }
-  let res, body = '';
-  for (const model of WHISPER_MODELS) {
+  let res, body = '', usedModel = '';
+  for (const model of models) {
+    usedModel = model;
     const form = new FormData();
     form.append('file', blob, filename);
     form.append('model', model);
@@ -69,20 +85,30 @@ export async function transcribe(blob, { langKey = 'auto', filename = 'recording
       e.code = 'network'; throw e;
     }
     body = await res.text().catch(() => '');
-    const gone = res.status === 404 || (res.status === 400 && /model_not_found|decommissioned|does not exist/i.test(body));
-    if (!gone) break; // אחרת מנסים את המודל הבא
+    // המודל הושבת, או שהגענו למגבלה שלו: מנסים את המודל הבא ברשימה
+    const gone = res.status === 404 || res.status === 429 || (res.status === 400 && /model_not_found|decommissioned|does not exist/i.test(body));
+    if (!gone) break;
   }
   if (!res.ok) { const x = errorFor(res.status, body); const e = new Error(x.text); e.code = x.code; throw e; }
   let d;
   try { d = JSON.parse(body); } catch { const e = new Error('תשובה לא צפויה משירות התמלול.'); e.code = 'bad'; throw e; }
-  const segments = Array.isArray(d.segments)
-    ? d.segments.map(s => ({ start: Number(s.start) || 0, end: Number(s.end) || 0, text: String(s.text || '').trim() })).filter(s => s.text)
-    : [];
-  const text = String(d.text || '').trim();
+  let raw = Array.isArray(d.segments) ? d.segments : [];
+  let dropped = 0;
+  if (filterDubious && raw.length) {
+    const kept = raw.filter(s => !isDubiousSegment(s));
+    dropped = raw.length - kept.length;
+    raw = kept;
+  }
+  const segments = raw.map(s => ({ start: Number(s.start) || 0, end: Number(s.end) || 0, text: String(s.text || '').trim() })).filter(s => s.text);
+  // אם סיננו קטעים, הטקסט נבנה מהקטעים שנשארו. אחרת משתמשים בטקסט המלא כמו שהוא.
+  const text = dropped ? segments.map(s => s.text).join(' ').trim() : String(d.text || '').trim();
   return {
     text,
     langKey: langKey !== 'auto' ? langKey : detectedLangKey(d.language),
     detectedName: d.language || '',
+    model: usedModel,
+    duration: Number(d.duration) || 0,
+    dropped,
     segments: segments.length ? segments : (text ? [{ start: 0, end: Number(d.duration) || 0, text }] : [])
   };
 }

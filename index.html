@@ -13,7 +13,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="מתורגמן" />
-  <link rel="stylesheet" href="css/styles.css?v=f1de6af7ab" />
+  <link rel="stylesheet" href="css/styles.css?v=a636deef03" />
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
 
@@ -109,6 +109,10 @@
           </label>
         </div>
         <p id="autoTalkStatus" class="text-xs text-slate-400 min-h-[1rem]" aria-live="polite"></p>
+        <div id="lastRecWrap" class="hidden flex items-center gap-2 text-xs text-slate-400 bg-slate-900/60 border border-slate-800 rounded-xl px-3 py-2">
+          <button id="lastRecPlay" type="button" class="shrink-0 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-100 font-semibold transition" aria-label="השמע את ההקלטה האחרונה">▶ שמע את ההקלטה</button>
+          <span id="lastRecInfo" class="min-w-0 leading-relaxed"></span>
+        </div>
       </div>
 
       <!-- Speaker A -->
@@ -506,7 +510,7 @@
         <p class="text-xs text-slate-400 leading-relaxed">Whisper מקליט בשקט (בלי הצליל של הטלפון), מסיים לבד כשמפסיקים לדבר, ומדויק יותר ברומנית ובתאית. לוקח שנייה או שתיים יותר, וצריך מפתח Groq. כפתור "דברו – האפליקציה תזהה מי מדבר" תמיד עובד עם Whisper.</p>
       </div>
 
-      <div class="border-t border-slate-800 pt-3 flex flex-col gap-1.5">
+      <div id="serverBlock" class="hidden border-t border-slate-800 pt-3 flex flex-col gap-1.5">
         <span class="text-slate-300">שרת תרגום אישי (רשות, Microsoft Translator)</span>
         <input id="optServerUrl" type="url" dir="ltr" autocomplete="off" spellcheck="false" aria-label="כתובת השרת" placeholder="https://xxxx.workers.dev" class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
         <div class="flex gap-2">
@@ -574,18 +578,18 @@
   <!-- כתובת עם גרסה לכל קובץ, כדי שהדפדפן לעולם לא יערבב קובץ ישן עם חדש. נכתב אוטומטית ע"י tools/stamp-sw.py -->
   <script type="importmap">
   { "imports": {
-    "./js/app.js": "./js/app.js?v=f1de6af7ab",
-    "./js/languages.js": "./js/languages.js?v=f1de6af7ab",
-    "./js/phrasebook.js": "./js/phrasebook.js?v=f1de6af7ab",
-    "./js/translate.js": "./js/translate.js?v=f1de6af7ab",
-    "./js/speech.js": "./js/speech.js?v=f1de6af7ab",
-    "./js/recorder.js": "./js/recorder.js?v=f1de6af7ab",
-    "./js/transcribe.js": "./js/transcribe.js?v=f1de6af7ab",
-    "./js/vision.js": "./js/vision.js?v=f1de6af7ab",
-    "./js/currency.js": "./js/currency.js?v=f1de6af7ab",
-    "./js/ui-strings.js": "./js/ui-strings.js?v=f1de6af7ab"
+    "./js/app.js": "./js/app.js?v=a636deef03",
+    "./js/languages.js": "./js/languages.js?v=a636deef03",
+    "./js/phrasebook.js": "./js/phrasebook.js?v=a636deef03",
+    "./js/translate.js": "./js/translate.js?v=a636deef03",
+    "./js/speech.js": "./js/speech.js?v=a636deef03",
+    "./js/recorder.js": "./js/recorder.js?v=a636deef03",
+    "./js/transcribe.js": "./js/transcribe.js?v=a636deef03",
+    "./js/vision.js": "./js/vision.js?v=a636deef03",
+    "./js/currency.js": "./js/currency.js?v=a636deef03",
+    "./js/ui-strings.js": "./js/ui-strings.js?v=a636deef03"
   } }
   </script>
-  <script type="module" src="js/app.js?v=f1de6af7ab"></script>
+  <script type="module" src="js/app.js?v=a636deef03"></script>
 </body>
 </html>

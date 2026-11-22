@@ -4,7 +4,7 @@ import { translate, getEmail, setEmail, clearCache, cacheSize, isLang, getServer
 import { speak, stopSpeaking, listen, listenLoop, unlockAudio, hasVoice, voicesLoaded, speechSupport, isSpeaking } from './speech.js';
 import { panelBStrings, PANEL_B_UI } from './ui-strings.js';
 import { startRecording, recordUtterance, recorderSupported, extFor } from './recorder.js';
-import { transcribe, getGroqKey, setGroqKey, looksLikeGroqKey, testGroqKey, groupSegments } from './transcribe.js';
+import { transcribe, getGroqKey, setGroqKey, looksLikeGroqKey, testGroqKey, groupSegments, CONVERSATION_MODELS } from './transcribe.js';
 import { prepareImage, readAndTranslate, availableModels, VISION_CANDIDATES } from './vision.js';
 import { getRates, normalizeCurrency, toILS, formatILS, RATES_CREDIT } from './currency.js';
 const panelBStringsAll = () => PANEL_B_UI;
@@ -589,6 +589,34 @@ function decideSpeaker(text, detected) {
   return { speaker: 'B', from: isLang(detected) ? detected : 'auto' }; // שפה שלישית: מתרגמים לשפה של דובר א׳
 }
 
+/* ההקלטה האחרונה של Whisper: מציגים מה נשלח ומה חזר, ומאפשרים להשמיע אותה. כך רואים אם הבעיה בהקלטה עצמה או בזיהוי. */
+const lastRec = { url: null, audio: null };
+const lrEl = { wrap: $('lastRecWrap'), play: $('lastRecPlay'), info: $('lastRecInfo') };
+function setLastRecording({ blob, peak, ms, asked, model, detected, dropped, text }) {
+  if (lastRec.audio) { try { lastRec.audio.pause(); } catch { /* ignore */ } lastRec.audio = null; }
+  if (lastRec.url) { try { URL.revokeObjectURL(lastRec.url); } catch { /* ignore */ } }
+  lastRec.url = blob ? URL.createObjectURL(blob) : null;
+  const ltr = v => `\u2066${v}\u2069`; // מבודד שמות באנגלית ומספרים, כדי שלא יתערבבו בתוך טקסט בעברית
+  const pct = Math.round(Math.min(1, peak || 0) * 100);
+  const level = pct < 20 ? `⚠ עוצמה חלשה מאוד ${ltr(pct + '%')}` : pct > 97 ? `⚠ עוצמה גבוהה מדי, ייתכן עיוות ${ltr(pct + '%')}` : `עוצמה ${ltr(pct + '%')}`;
+  const asLang = asked === 'auto' ? 'זיהוי שפה אוטומטי' : (isLang(asked) ? LANGUAGES[asked].nameHe : asked);
+  const parts = [`${ltr((ms / 1000).toFixed(1))} שנ׳`, level, `מודל ${ltr(model || '?')}`, `שפה: ${asLang}`];
+  if (detected && asked === 'auto') parts.push(`זוהתה: ${ltr(detected)}`);
+  if (dropped) parts.push(`הושמט קטע שנראה כמו רעש (${dropped})`);
+  if (!text) parts.push('לא זוהה טקסט');
+  lrEl.info.textContent = parts.join(' · ');
+  lrEl.wrap.classList.toggle('hidden', !lastRec.url);
+}
+lrEl.play.addEventListener('click', () => {
+  if (!lastRec.url) return;
+  unlockAudio();
+  stopSpeaking();
+  if (wState.session) return; // באמצע הקלטה לא משמיעים
+  if (lastRec.audio) { try { lastRec.audio.pause(); } catch { /* ignore */ } }
+  lastRec.audio = new Audio(lastRec.url);
+  lastRec.audio.play().catch(() => showBanner('לא ניתן להשמיע את ההקלטה בדפדפן הזה.', 'warn'));
+});
+
 /** מקליט משפט אחד בשקט ומתמלל. auto=true: זיהוי שפה אוטומטי. מחזיר { text, langKey } או null. */
 async function whisperUtterance({ speaker, auto, onState }) {
   if (!getGroqKey()) {
@@ -599,9 +627,9 @@ async function whisperUtterance({ speaker, auto, onState }) {
   const session = { speaker, auto, stop: () => { session.stopRequested = true; } };
   wState.session = session;
   if (onState) onState('rec');
-  let ctl;
+  let ctl, peak = 0;
   try {
-    ctl = await recordUtterance({ onSpeech: () => { if (onState) onState('speech'); } });
+    ctl = await recordUtterance({ onSpeech: () => { if (onState) onState('speech'); }, onLevel: v => { if (v > peak) peak = v; } });
   } catch (e) {
     if (wState.session === session) wState.session = null;
     if (onState) onState('idle');
@@ -619,8 +647,10 @@ async function whisperUtterance({ speaker, auto, onState }) {
   }
   if (onState) onState('transcribing');
   try {
-    const r = await transcribe(res.blob, { langKey: auto ? 'auto' : langOf(speaker), filename: `speech.${extFor(res.blob.type)}` });
+    const asked = auto ? 'auto' : langOf(speaker);
+    const r = await transcribe(res.blob, { langKey: asked, filename: `speech.${extFor(res.blob.type)}`, models: CONVERSATION_MODELS, filterDubious: true });
     const text = String(r.text || '').trim();
+    setLastRecording({ blob: res.blob, peak, ms: res.ms, asked, model: r.model, detected: r.detectedName, dropped: r.dropped, text });
     if (onState) onState(text ? 'done' : 'empty');
     return { text, langKey: r.langKey };
   } catch (e) {
@@ -2028,6 +2058,10 @@ gEl.input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventD
 
 function refreshSettingsInfo() {
   renderSttEngine();
+  // השרת האישי (רשות) מוסתר. מוצג רק למי שכבר מחובר אליו (כדי שיוכל להתנתק), או בכתובת עם ?advanced=1
+  let advanced = false;
+  try { advanced = new URLSearchParams(location.search).has('advanced'); } catch { /* ignore */ }
+  $('serverBlock').classList.toggle('hidden', !(getServer() || advanced));
   showServerState();
   gEl.input.value = getGroqKey();
   if (getGroqKey()) setGroqStatus('text-emerald-400', 'מפתח שמור ✓'); else setGroqStatus('text-slate-400', 'לא מוגדר מפתח.');

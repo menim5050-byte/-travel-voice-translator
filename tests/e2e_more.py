@@ -491,6 +491,11 @@ with sync_playwright() as p:
     ctx6, page6, errs6 = new_page(b)
     page6.route('https://tvt-test.example.workers.dev/**', server_route)
     page6.click('#settingsBtn'); page6.wait_for_selector('#settings[open]')
+    ok('server: hidden in settings by default', not page6.is_visible('#serverBlock') and not page6.is_visible('#optServerUrl'))
+    page6.click('#closeSettings')
+    page6.goto(URL + '?advanced=1'); page6.wait_for_load_state('networkidle')
+    page6.click('#settingsBtn'); page6.wait_for_selector('#settings[open]')
+    ok('server: shown with ?advanced=1', page6.is_visible('#serverBlock'))
     ok('server: not connected by default', 'לא מחובר' in page6.inner_text('#serverStatus'))
     page6.fill('#optServerUrl', 'tvt-test.example.workers.dev/'); page6.fill('#optServerCode', 'wrong-code-xyz'); page6.click('#saveServerBtn')
     page6.wait_for_function("document.getElementById('serverStatus').textContent.includes('לא נכון')", timeout=5000)
@@ -509,6 +514,10 @@ with sync_playwright() as p:
     ok('server: falls back to the regular chain when the server fails', len(mm_calls) == n_mm + 1)
     page6.click('#settingsBtn'); page6.wait_for_selector('#settings[open]')
     ok('server: settings show the last server problem', 'אבל בתרגום האחרון' in page6.inner_text('#serverStatus'), page6.inner_text('#serverStatus'))
+    page6.click('#closeSettings')
+    page6.goto(URL); page6.wait_for_load_state('networkidle')  # בלי ?advanced=1: מחובר, ולכן הבלוק מוצג
+    page6.click('#settingsBtn'); page6.wait_for_selector('#settings[open]')
+    ok('server: already connected -> block visible without ?advanced=1', page6.is_visible('#serverBlock'))
     page6.fill('#optServerUrl', ''); page6.click('#saveServerBtn'); page6.wait_for_timeout(200)
     ok('server: disconnect by clearing the address', page6.evaluate("localStorage.getItem('tvt_server')") is None and 'לא מחובר' in page6.inner_text('#serverStatus'))
     page6.click('#closeSettings')
@@ -538,8 +547,10 @@ with sync_playwright() as p:
         if u.endswith('/models'):
             route.fulfill(status=200, headers=CORS, body=json.dumps({'data': [{'id': 'whisper-large-v3-turbo'}]})); return
         wq['calls'].append(route.request.post_data_buffer or b'')
-        lang, text = wq['queue'].pop(0) if wq['queue'] else ('english', '')
-        route.fulfill(status=200, headers=CORS, body=json.dumps({'language': lang, 'text': text, 'duration': 2.0, 'segments': [{'start': 0, 'end': 2, 'text': text}]}))
+        entry = wq['queue'].pop(0) if wq['queue'] else ('english', '')
+        lang, text = entry[0], entry[1]
+        segs = entry[2] if len(entry) > 2 else [{'start': 0, 'end': 2, 'text': text}]
+        route.fulfill(status=200, headers=CORS, body=json.dumps({'language': lang, 'text': text, 'duration': 2.0, 'segments': segs}))
     def say(pg, ms=1000):
         pg.evaluate('window.__level = 0.5'); pg.wait_for_timeout(ms); pg.evaluate('window.__level = 0.02')
     reset()
@@ -559,6 +570,19 @@ with sync_playwright() as p:
     page7.wait_for_function("document.getElementById('outputA').textContent === 'MM:איפה התחנה הקרובה'", timeout=8000)
     dt = time.time() - t0
     ok('whisper mic: stops by itself after silence, transcribes and translates', dt < 4 and b'name="language"' in wq['calls'][-1] and b'\r\n\r\nhe\r\n' in wq['calls'][-1], f'{dt:.1f}s')
+    ok('whisper mic: conversation uses the more accurate model (large-v3)', b'name="model"\r\n\r\nwhisper-large-v3\r\n' in wq['calls'][-1])
+    info = page7.inner_text('#lastRecInfo')
+    ok('last recording: strip shown with length, level, model and language', page7.is_visible('#lastRecWrap') and 'whisper-large-v3' in info and 'עברית' in info and 'עוצמה' in info and 'שנ' in info, info)
+    page7.evaluate("window.__played = 0; window.Audio = function (u) { this.play = () => { window.__played++; return Promise.resolve(); }; this.pause = () => {}; }")
+    page7.click('#lastRecPlay'); page7.wait_for_timeout(100)
+    ok('last recording: play button plays the recorded audio', page7.evaluate('window.__played') == 1)
+    # Whisper "ממציא" טקסט מרעש: קטע עם no_speech גבוה ו-avg_logprob נמוך מושמט ולא מתורגם
+    wq['queue'].append(('hebrew', 'מתי יוצא האוטובוס האחרון לעיר תודה שצפיתם', [
+        {'start': 0, 'end': 2, 'text': 'מתי יוצא האוטובוס האחרון לעיר', 'avg_logprob': -0.3, 'no_speech_prob': 0.02, 'compression_ratio': 1.1},
+        {'start': 2, 'end': 3, 'text': 'תודה שצפיתם', 'avg_logprob': -1.6, 'no_speech_prob': 0.92, 'compression_ratio': 1.0}]))
+    tap7('#micBtnA'); page7.wait_for_timeout(700); say(page7, 1000)
+    page7.wait_for_function("document.getElementById('outputA').textContent === 'MM:מתי יוצא האוטובוס האחרון לעיר'", timeout=8000)
+    ok('whisper mic: invented text from noise is dropped, not translated', 'תודה שצפיתם' not in page7.input_value('#inputA') and 'הושמט' in page7.inner_text('#lastRecInfo'), page7.inner_text('#lastRecInfo'))
     n = len(wq['calls'])
     tap7('#micBtnB'); page7.wait_for_timeout(300); tap7('#micBtnB'); page7.wait_for_timeout(500)
     ok('whisper mic: nothing said -> no request, clear message', len(wq['calls']) == n and 'לא זוהה דיבור' in page7.inner_text('#interimB'))
