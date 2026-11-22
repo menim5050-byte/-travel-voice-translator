@@ -181,8 +181,9 @@ async function groqRequest(model, messages, { signal, reasoning, maxTokens, time
 }
 
 /** מריץ run(model, reasoning) על המודל הזמין, ועובר למודל השני כשהראשון עמוס או הושבת. */
-async function withGroqModels(run, signal) {
-  const models = await pickTextModels(getGroqKey());
+async function withGroqModels(run, signal, prefer = '') {
+  let models = await pickTextModels(getGroqKey());
+  if (prefer && models.includes(prefer)) models = [prefer, ...models.filter(m => m !== prefer)];
   let lastErr = new Error('groq: no model');
   for (const model of models.slice(0, 2)) {
     if (signal && signal.aborted) break;
@@ -464,6 +465,49 @@ function backups(text, from, to, signal) {
   return list.map(b => inChunks(b.run, text, BACKUP_MAX_BYTES, from, to)
     .then(out => ({ text: out, source: b.name }))
     .catch(e => { if (!signal.aborted) markFailed(b.host); throw e; }));
+}
+
+/**
+ * שופט משמעות: האם שני המשפטים אומרים אותו דבר (לא מילה במילה). מחזיר { same, note } או זורק כשאין Groq.
+ * מעדיף את המודל הקטן והמהיר, כי המשימה פשוטה.
+ */
+export async function judgeSameMeaning(original, backTranslated, lang) {
+  if (!groqReady()) throw new Error('groq: not ready');
+  const messages = [
+    { role: 'system', content: [
+      'You compare two sentences in the same language: the ORIGINAL and a BACK-TRANSLATION of a translation of it.',
+      'Decide if the back-translation preserves the meaning of the original: same intent, same facts, same numbers, same negation, same question or statement.',
+      'Different wording is fine. A changed meaning, a missing or added fact, a different number, a lost "not", or a changed place, time or price is NOT fine.',
+      'Answer with exactly one word: SAME or DIFFERENT. Then, only if DIFFERENT, a colon and a short reason in Hebrew (max 12 words).'
+    ].join(' ') },
+    { role: 'user', content: `Language: ${ENGLISH_NAME[lang] || lang}\nORIGINAL: ${original}\nBACK-TRANSLATION: ${backTranslated}` }
+  ];
+  const raw = await withGroqModels(async (model, reasoning) =>
+    groqRequest(model, messages, { reasoning, maxTokens: 200, timeoutMs: 8000 }), undefined, 'openai/gpt-oss-20b');
+  const t = String(raw || '').trim();
+  if (/^\s*DIFFERENT/i.test(t)) return { same: false, note: t.replace(/^\s*DIFFERENT\s*:?\s*/i, '').slice(0, 120) };
+  if (/^\s*SAME/i.test(t)) return { same: true, note: '' };
+  throw new Error('judge: unclear');
+}
+
+/**
+ * אימות עצמאי של תרגום: מתרגם אותו חזרה במנוע אחר (Google, ואם נכשל MyMemory) ומשווה משמעות לשפת המקור.
+ * מחזיר { status: 'ok' | 'warn' | 'unknown', back, note, engine }.
+ * 'unknown' = לא הצלחנו לבדוק (אין רשת או אין מפתח), ואין להציג אותו כאישור.
+ */
+export async function verifyTranslation(original, from, translated, to) {
+  let back = '', engine = '';
+  for (const svc of ['google', 'mymemory']) {
+    try { back = String(await probeTranslator(svc, translated, to, from) || '').trim(); engine = svc; if (back) break; } catch { /* מנסים את הבא */ }
+  }
+  if (!back) return { status: 'unknown', back: '', note: '', engine: '' };
+  if (norm(back) === norm(original)) return { status: 'ok', back, note: '', engine };
+  try {
+    const j = await judgeSameMeaning(original, back, from);
+    return { status: j.same ? 'ok' : 'warn', back, note: j.note, engine };
+  } catch {
+    return { status: 'unknown', back, note: '', engine };
+  }
 }
 
 /** לבדיקת מוכנות: מתרגם משפט אחד דרך שירות מסוים בלבד (groq | mymemory | google). */

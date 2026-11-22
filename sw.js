@@ -3,7 +3,7 @@
 // כשיש גרסה חדשה באתר, הדפדפן מוריד אותה ברקע בשלמותה, והיא נכנסת לפעולה בפתיחה הבאה.
 // בקשות לשירותי התרגום (דומיין אחר) לא נוגעים בהן.
 // VERSION מחושב אוטומטית מתוכן הקבצים: python3 tools/stamp-sw.py
-const VERSION = 'tvt-98a3e0fb45';
+const VERSION = 'tvt-73f5ab2e28';
 const ASSETS = [
   './', './index.html', './manifest.json', './css/styles.css',
   './js/app.js', './js/languages.js', './js/phrasebook.js', './js/translate.js', './js/speech.js', './js/ui-strings.js', './js/recorder.js', './js/transcribe.js', './js/vision.js', './js/currency.js', './js/numcheck.js',

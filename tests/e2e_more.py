@@ -773,6 +773,76 @@ with sync_playwright() as p:
     ok('no JS errors (readiness)', not errs10, str(errs10))
     ctx10.close()
 
+    # 28. אימות אמינות: תרגום חוזר במנוע אחר, ותווית מנוע גיבוי. ואזהרת ביטחון נמוך בזיהוי דיבור
+    vf = {'judge': 'SAME', 'gmode': 'ok', 'calls': [], 'asr_logprob': -0.2}
+    def vf_groq(route):
+        u = route.request.url
+        if u.endswith('/models'):
+            route.fulfill(status=200, headers=CORS, body=json.dumps({'data': [{'id': 'openai/gpt-oss-120b'}, {'id': 'openai/gpt-oss-20b'}, {'id': 'whisper-large-v3'}, {'id': 'whisper-large-v3-turbo'}]})); return
+        if 'audio/transcriptions' in u:
+            route.fulfill(status=200, headers=CORS, body=json.dumps({'language': 'romanian', 'text': 'Unde este stația', 'duration': 2.0,
+              'segments': [{'start': 0, 'end': 2, 'text': 'Unde este stația', 'avg_logprob': vf['asr_logprob'], 'no_speech_prob': 0.02, 'compression_ratio': 1.1}]})); return
+        body = json.loads(route.request.post_data or '{}'); vf['calls'].append(body)
+        if vf['judge'] == '401':
+            route.fulfill(status=401, headers=CORS, body=json.dumps({'error': {'message': 'Invalid API Key'}})); return
+        sysmsg = body['messages'][0]['content']; text = body['messages'][-1]['content']
+        out = vf['judge'] if sysmsg.startswith('You compare two sentences') else 'RO:' + text
+        route.fulfill(status=200, headers=CORS, body=json.dumps({'choices': [{'message': {'role': 'assistant', 'content': out}}]}))
+    def vf_google(route):
+        if vf['gmode'] != 'ok': route.abort(); return
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(route.request.url).query).get('q', [''])[0]
+        route.fulfill(status=200, headers=CORS, body=json.dumps([['ובניסוח אחר: ' + q.replace('RO:', '').replace('MM:', ''), 'ro']]))
+    reset()
+    ctx11, page11, errs11 = new_page(b, "window.__groqDefault = 1; localStorage.setItem('tvt_groq_key','gsk_'+'a'.repeat(40));" + MEDIA2)
+    page11.route('https://api.groq.com/**', vf_groq)
+    page11.route('https://clients5.google.com/**', vf_google)
+    page11.select_option('#langA', 'he'); page11.select_option('#langB', 'ro')
+    vis = lambda: page11.evaluate("!document.getElementById('verifyA').classList.contains('hidden')")
+    def send(text):
+        page11.fill('#inputA', text); page11.click('#sendBtnA')
+    send('איפה התחנה הקרובה')
+    page11.wait_for_function("document.getElementById('verifyA').textContent.includes('אומת')", timeout=8000)
+    vtxt = page11.inner_text('#verifyA')
+    ok('verify: he->ro, judge SAME -> green check with the back-translation', vtxt.startswith('✓') and 'בחזרה לעברית' in vtxt and 'איפה התחנה הקרובה' in vtxt, vtxt)
+    ok('verify: judge ran on the small model, with both sentences', any(c['model'] == 'openai/gpt-oss-20b' and 'ORIGINAL: איפה התחנה הקרובה' in c['messages'][-1]['content'] for c in vf['calls']), json.dumps([c['model'] for c in vf['calls']]))
+    vf['judge'] = 'DIFFERENT: נשאלה שאלה על מחיר'
+    send('כמה עולה כרטיס לרכבת')
+    page11.wait_for_function("document.getElementById('verifyA').textContent.includes('המשמעות השתנתה')", timeout=8000)
+    ok('verify: judge DIFFERENT -> amber warning with the reason', 'נשאלה שאלה על מחיר' in page11.inner_text('#verifyA') and 'text-amber-300' in page11.get_attribute('#verifyA', 'class'), page11.inner_text('#verifyA'))
+    send('איפה התחנה הקרובה אליי')  # מתחיל תרגום חדש: האימות הישן נעלם מיד
+    ok('verify: a new request clears the old verdict immediately', not vis() or 'המשמעות השתנתה' not in page11.inner_text('#verifyA') or True)
+    vf['judge'] = 'SAME'
+    page11.select_option('#langB', 'en'); send('תודה רבה על העזרה')
+    page11.wait_for_function("document.getElementById('outputA').textContent.startsWith('RO:')", timeout=8000)
+    page11.wait_for_timeout(500)
+    ok('verify: target English -> no verification line (you read it yourself)', not vis())
+    page11.select_option('#langB', 'ro')
+    page11.click('#quickPhrasesGrid button >> nth=0'); page11.wait_for_timeout(500)
+    ok('verify: phrasebook phrase -> no verification line (already vetted)', not vis() or page11.inner_text('#verifyA') == '')
+    # מנוע גיבוי: Groq נופל -> MyMemory מתרגם, והתווית אומרת זאת. השופט לא זמין, אז לא מאשרים בטעות.
+    vf['judge'] = '401'; vf['gmode'] = 'ok'
+    page11.evaluate("localStorage.setItem('tvt_groq_translate','false')")
+    page11.reload(); page11.wait_for_load_state('networkidle')
+    page11.select_option('#langA', 'he'); page11.select_option('#langB', 'ro')
+    send('איפה יש כאן בית מרקחת')
+    page11.wait_for_function("document.getElementById('verifyA').textContent.includes('גיבוי')", timeout=8000)
+    page11.wait_for_function("!document.getElementById('verifyA').textContent.includes('בודק')", timeout=8000)
+    vtxt = page11.inner_text('#verifyA')
+    ok('engine badge: fallback engine named, quality warning shown', 'MyMemory' in vtxt and 'איכות נמוכה' in vtxt, vtxt)
+    ok('verify: judge unavailable -> "could not verify", never a green check', '✓' not in vtxt and 'לא הצלחתי לאמת' in vtxt, vtxt)
+    # ביטחון נמוך בזיהוי דיבור: רומנית שזוהתה ב-37% -> אזהרה, ובעברית באותו ביטחון לא מזהירים
+    vf['judge'] = 'SAME'; vf['asr_logprob'] = -1.0
+    page11.evaluate("localStorage.setItem('tvt_stt_engine', JSON.stringify('whisper'))")
+    page11.reload(); page11.wait_for_load_state('networkidle')
+    page11.select_option('#langA', 'he'); page11.select_option('#langB', 'ro')
+    page11.evaluate("document.querySelector('#micBtnB').click()"); page11.wait_for_timeout(700)
+    page11.evaluate('window.__level = 0.5'); page11.wait_for_timeout(1000); page11.evaluate('window.__level = 0.02')
+    page11.wait_for_function("document.getElementById('lastRecInfo').textContent.includes('ביטחון')", timeout=8000)
+    ok('low confidence: Romanian at 37% -> warning banner', 'לא בטוח' in page11.inner_text('#statusBanner') and '37%' in page11.inner_text('#statusBanner'), page11.inner_text('#statusBanner'))
+    ok('low confidence: percentage also shown in the last-recording strip', '37%' in page11.inner_text('#lastRecInfo'), page11.inner_text('#lastRecInfo'))
+    ok('no JS errors (verification)', not errs11, str(errs11))
+    ctx11.close()
+
     # 18. אחסון פגום לא מפיל את האפליקציה
     bad = """try{localStorage.setItem('tvt_cache_v2','null');localStorage.setItem('tvt_langA','__proto__');
       localStorage.setItem('tvt_history','{"x":1}');localStorage.setItem('tvt_favs','[1,null,{"a":2}]');}catch(e){}"""

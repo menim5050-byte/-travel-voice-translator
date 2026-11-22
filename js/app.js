@@ -1,6 +1,6 @@
 import { LANGUAGES } from './languages.js';
 import { PHRASES, CATEGORY_LABELS, HOTEL_TEMPLATE } from './phrasebook.js';
-import { translate, getEmail, setEmail, clearCache, cacheSize, isLang, getServer, setServer, testServer, normalizeServerUrl, lastServerError, groqTranslateOn, setGroqTranslate, translateBatch, probeTranslator } from './translate.js';
+import { translate, getEmail, setEmail, clearCache, cacheSize, isLang, getServer, setServer, testServer, normalizeServerUrl, lastServerError, groqTranslateOn, setGroqTranslate, translateBatch, probeTranslator, verifyTranslation } from './translate.js';
 import { speak, stopSpeaking, listen, listenLoop, unlockAudio, hasVoice, voicesLoaded, speechSupport, isSpeaking } from './speech.js';
 import { panelBStrings, PANEL_B_UI } from './ui-strings.js';
 import { startRecording, recordUtterance, recorderSupported, extFor } from './recorder.js';
@@ -53,6 +53,7 @@ const el = {
   outBoxA: $('outBoxA'), outBoxB: $('outBoxB'),
   outputA: $('outputA'), outputB: $('outputB'),
   backA: $('backA'), backB: $('backB'),
+  verifyA: $('verifyA'), verifyB: $('verifyB'),
   targetTagA: $('targetTagA'), targetTagB: $('targetTagB'),
   speakOutBtnA: $('speakOutBtnA'), speakOutBtnB: $('speakOutBtnB'),
   bigTextBtnA: $('bigTextBtnA'), bigTextBtnB: $('bigTextBtnB'),
@@ -83,6 +84,7 @@ const el = {
 const other = s => (s === 'A' ? 'B' : 'A');
 const outputOf = s => (s === 'A' ? el.outputA : el.outputB);
 const backOf = s => (s === 'A' ? el.backA : el.backB);
+const verifyOf = s => (s === 'A' ? el.verifyA : el.verifyB);
 const boxOf = s => (s === 'A' ? el.outBoxA : el.outBoxB);
 const langOf = s => (s === 'A' ? el.langA.value : el.langB.value);
 // הצד של דובר ב׳ מדבר בשפה שלו רק במצב פנים-אל-פנים (אז הוא פונה אליו)
@@ -187,7 +189,8 @@ function showResult(speaker, text, langKey) {
   o.lang = LANGUAGES[langKey].speechCode;
   reveal(speaker);
 }
-function hideBack(speaker) { const b = backOf(speaker); b.classList.add('hidden'); b.textContent = ''; }
+function hideBack(speaker) { const b = backOf(speaker); b.classList.add('hidden'); b.textContent = ''; hideVerify(speaker); }
+function hideVerify(speaker) { const v = verifyOf(speaker); v.classList.add('hidden'); v.textContent = ''; }
 
 // מביא את תיבת התרגום לתוך המסך אם היא מחוץ לו (למשל אחרי לחיצה על משפט מהיר)
 function reveal(speaker) {
@@ -398,11 +401,52 @@ function finishResult(speaker, srcText, rememberLang, out, to, source, historyLa
   rememberResult(speaker, srcText, rememberLang, out, to);
   addHistoryEntry(speaker, historyLang, to, srcText, out, source);
   if (forceSpeak || el.autoSpeakToggle.checked) speakText(out, to, { auto: !forceSpeak });
+  runVerify(speaker, srcText, historyLang, out, to, source, state.reqId[speaker]);
   // מחיר, שעה או טלפון שהשתנו בתרגום הם הטעות היקרה ביותר, ולכן מתריעים (המספרים מבודדים כדי שלא יתהפכו ב-RTL)
   const mm = numberMismatch(srcText, out);
   if (mm) {
     const f = a => a.map(n => `\u2066${n}\u2069`).join(' ');
     showBanner(`⚠ בדוק מספרים: במקור ${f(mm.source)}, בתרגום ${mm.translated.length ? f(mm.translated) : 'אין ספרות'}. אם מדובר במחיר או בשעה, אמת אותם.`, 'warn');
+  }
+}
+
+/* ---------- אימות אמינות: תרגום חוזר במנוע אחר, ותווית על מנוע גיבוי ---------- */
+const FALLBACK_ENGINE = { mymemory: 'MyMemory', google: 'Google', lingva: 'Lingva' };
+const NO_VERIFY_SOURCES = new Set(['phrasebook', 'same', 'none']);
+const verifyWanted = (to, from) => isLang(to) && isLang(from) && to !== 'he' && to !== 'en' && to !== from;
+
+function paintVerify(speaker, tone, text, back, backLang) {
+  const v = verifyOf(speaker);
+  const cls = { ok: 'text-emerald-400', warn: 'text-amber-300', info: 'text-slate-400' }[tone] || 'text-slate-400';
+  v.className = `text-xs leading-relaxed ${cls}`;
+  v.dir = 'rtl';
+  v.textContent = text;
+  if (back) {
+    const lab = document.createElement('span');
+    lab.textContent = ` בחזרה ל${LANGUAGES[backLang].nameHe}: `;
+    const val = document.createElement('bdi');
+    val.className = 'text-slate-200';
+    val.textContent = back;
+    v.appendChild(lab); v.appendChild(val);
+  }
+}
+
+async function runVerify(speaker, srcText, from, out, to, source, myReq) {
+  const fb = FALLBACK_ENGINE[source];
+  const badge = fb ? `⚠ תורגם במנוע גיבוי (${'\u2066' + fb + '\u2069'}), איכות נמוכה יותר. ` : '';
+  if (!verifyWanted(to, from) || NO_VERIFY_SOURCES.has(source)) {
+    if (badge) paintVerify(speaker, 'warn', badge.trim());
+    return;
+  }
+  paintVerify(speaker, fb ? 'warn' : 'info', badge + 'בודק אמינות...');
+  try {
+    const r = await verifyTranslation(srcText, from, out, to);
+    if (myReq !== state.reqId[speaker]) return; // בינתיים התחיל תרגום חדש
+    if (r.status === 'ok') paintVerify(speaker, 'ok', badge + '✓ אומת במנוע נוסף.', r.back, from);
+    else if (r.status === 'warn') paintVerify(speaker, 'warn', badge + '⚠ ייתכן שהמשמעות השתנתה' + (r.note ? ` (${r.note})` : '') + '. כדאי לנסח מחדש בקצרה.', r.back, from);
+    else paintVerify(speaker, fb ? 'warn' : 'info', badge + 'לא הצלחתי לאמת כרגע.', r.back, from);
+  } catch {
+    if (myReq === state.reqId[speaker]) paintVerify(speaker, fb ? 'warn' : 'info', badge + 'לא הצלחתי לאמת כרגע.');
   }
 }
 
@@ -599,7 +643,7 @@ function decideSpeaker(text, detected) {
 /* ההקלטה האחרונה של Whisper: מציגים מה נשלח ומה חזר, ומאפשרים להשמיע אותה. כך רואים אם הבעיה בהקלטה עצמה או בזיהוי. */
 const lastRec = { url: null, audio: null };
 const lrEl = { wrap: $('lastRecWrap'), play: $('lastRecPlay'), info: $('lastRecInfo') };
-function setLastRecording({ blob, peak, ms, asked, model, detected, dropped, text }) {
+function setLastRecording({ blob, peak, ms, asked, model, detected, dropped, text, confidence }) {
   if (lastRec.audio) { try { lastRec.audio.pause(); } catch { /* ignore */ } lastRec.audio = null; }
   if (lastRec.url) { try { URL.revokeObjectURL(lastRec.url); } catch { /* ignore */ } }
   lastRec.url = blob ? URL.createObjectURL(blob) : null;
@@ -609,6 +653,7 @@ function setLastRecording({ blob, peak, ms, asked, model, detected, dropped, tex
   const asLang = asked === 'auto' ? 'זיהוי שפה אוטומטי' : (isLang(asked) ? LANGUAGES[asked].nameHe : asked);
   const parts = [`${ltr((ms / 1000).toFixed(1))} שנ׳`, level, `מודל ${ltr(model || '?')}`, `שפה: ${asLang}`];
   if (detected && asked === 'auto') parts.push(`זוהתה: ${ltr(detected)}`);
+  if (confidence != null) parts.push(`ביטחון בזיהוי ${ltr(Math.round(confidence * 100) + '%')}`);
   if (dropped) parts.push(`הושמט קטע שנראה כמו רעש (${dropped})`);
   if (!text) parts.push('לא זוהה טקסט');
   lrEl.info.textContent = parts.join(' · ');
@@ -667,14 +712,24 @@ async function whisperUtterance({ speaker, auto, onState }) {
     const asked = auto ? 'auto' : langOf(speaker);
     const r = await transcribe(res.blob, { langKey: asked, filename: `speech.${extFor(res.blob.type)}`, models: CONVERSATION_MODELS, filterDubious: true, prompt: whisperPrompt() });
     const text = String(r.text || '').trim();
-    setLastRecording({ blob: res.blob, peak, ms: res.ms, asked, model: r.model, detected: r.detectedName, dropped: r.dropped, text });
+    setLastRecording({ blob: res.blob, peak, ms: res.ms, asked, model: r.model, detected: r.detectedName, dropped: r.dropped, text, confidence: r.confidence });
     if (onState) onState(text ? 'done' : 'empty');
-    return { text, langKey: r.langKey };
+    return { text, langKey: r.langKey, confidence: r.confidence };
   } catch (e) {
     if (onState) onState('error');
     showBanner(e.message || 'התמלול נכשל.', 'error');
     return null;
   }
+}
+
+// זיהוי דיבור לא בטוח בשפה שהמשתמש לא קורא (רומנית, תאית, ערבית): מזהירים לפני שמתרגמים על בסיס טקסט שאולי שגוי.
+// הסף עדיין לא מכויל מול שימוש אמיתי, ולכן הביטחון מוצג גם ברצועת "ההקלטה האחרונה".
+export const LOW_CONFIDENCE = 0.6;
+function warnLowConfidence(confidence, langKey) {
+  if (confidence == null || confidence >= LOW_CONFIDENCE) return;
+  if (!isLang(langKey) || langKey === 'he' || langKey === 'en') return;
+  const pct = `\u2066${Math.round(confidence * 100)}%\u2069`;
+  showBanner(`⚠ הזיהוי של ${LANGUAGES[langKey].nameHe} לא בטוח (${pct}). אמת מול הטקסט שזוהה, או חזור על המשפט לאט וברור.`, 'warn');
 }
 
 // כפתור מיקרופון של דובר, כשמנוע הזיהוי הוא Whisper
@@ -699,6 +754,7 @@ async function toggleWhisperMic(speaker) {
   });
   if (state.activeMic === speaker) state.activeMic = null;
   if (!r || !r.text) return;
+  warnLowConfidence(r.confidence, r.langKey || langOf(speaker));
   inputEl.value = r.text;
   if (el.autoTranslateOnStop.checked) { interimEl.textContent = ''; handleTranslate(speaker, r.text); }
   else interimEl.textContent = micText(speaker, 'captured');
@@ -754,6 +810,7 @@ async function autoTalkLoop() {
     }
     empties = 0;
     const d = decideSpeaker(r.text, r.langKey);
+    warnLowConfidence(r.confidence, isLang(d.from) ? d.from : r.langKey);
     const who = d.speaker === 'A' ? 'דובר א׳' : 'דובר ב׳';
     const langName = isLang(d.from) ? LANGUAGES[d.from].nameHe : 'שפה שזוהתה אוטומטית';
     aEl.status.textContent = `זוהה: ${langName} ← ${who}`;

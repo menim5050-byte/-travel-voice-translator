@@ -60,6 +60,18 @@ export async function testGroqKey(key) {
   return true;
 }
 
+/** ביטחון בזיהוי, 0..1, מתוך avg_logprob של הקטעים (ממוצע משוקלל באורך). null אם אין נתון. */
+export function confidenceOf(segs) {
+  let w = 0, sum = 0;
+  for (const s of segs || []) {
+    const lp = Number(s && s.avg_logprob);
+    if (!Number.isFinite(lp)) continue;
+    const len = Math.max(0.2, (Number(s.end) || 0) - (Number(s.start) || 0));
+    sum += Math.exp(Math.min(0, lp)) * len; w += len;
+  }
+  return w ? Math.round((sum / w) * 100) / 100 : null;
+}
+
 /**
  * שולח הקלטה לתמלול. langKey = קוד שפה, או 'auto' לזיהוי אוטומטי.
  * מחזיר { text, langKey (שזוהתה או שנבחרה), segments: [{ start, end, text }] }.
@@ -110,6 +122,7 @@ export async function transcribe(blob, { langKey = 'auto', filename = 'recording
     model: usedModel,
     duration: Number(d.duration) || 0,
     dropped,
+    confidence: confidenceOf(raw),
     segments: segments.length ? segments : (text ? [{ start: 0, end: Number(d.duration) || 0, text }] : [])
   };
 }

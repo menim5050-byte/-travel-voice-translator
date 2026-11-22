@@ -122,7 +122,7 @@ with sync_playwright() as p:
     # שיחון אופליין למשפט מהיר + שפה ללא שיחון
     page.select_option('#langB','es')
     page.click('#quickPhrasesGrid button >> nth=0'); page.wait_for_timeout(400)
-    ok('quick phrase he->es goes through network', 'langpair=he%7Ces' in mm_calls[-1], mm_calls[-1][-45:])
+    ok('quick phrase he->es goes through network', any('langpair=he%7Ces' in c for c in mm_calls), str(mm_calls[-2:])[-90:])
     page.select_option('#langA','es'); page.select_option('#langB','he')
     n=len(mm_calls)
     page.click('#quickPhrasesGrid button >> nth=0'); page.wait_for_timeout(300)
