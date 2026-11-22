@@ -6,6 +6,8 @@ const G = await import('../js/gemini.js');
 const KEY = 'AIza' + 'b'.repeat(35);
 
 ok('key format', G.looksLikeGeminiKey(KEY) && !G.looksLikeGeminiKey('gsk_' + 'a'.repeat(40)) && !G.looksLikeGeminiKey(''));
+ok('key format: new AQ. keys (AI Studio, 2026) accepted', G.looksLikeGeminiKey('AQ.Ab8RN6' + 'x_y-z.'.repeat(8)) && !G.looksLikeGeminiKey('AQ.short'));
+ok('key format: spaces and line breaks from copying are removed', G.normalizeGeminiKey(' AQ.Ab8RN6abc\n def ') === 'AQ.Ab8RN6abcdef' && G.looksLikeGeminiKey(' ' + KEY + '\n'));
 ok('not ready without a key', !G.geminiReady());
 G.setGeminiKey(KEY);
 ok('ready with a key (assist on by default)', G.geminiReady());

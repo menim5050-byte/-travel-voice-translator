@@ -12,7 +12,10 @@ const FALLBACK_MODELS = ['gemini-flash-lite-latest', 'gemini-flash-latest'];
 
 export function getGeminiKey() { try { return localStorage.getItem(KEY) || ''; } catch { return ''; } }
 export function setGeminiKey(v) { try { v ? localStorage.setItem(KEY, v) : localStorage.removeItem(KEY); } catch { /* ignore */ } }
-export const looksLikeGeminiKey = v => /^AIza[0-9A-Za-z_-]{30,}$/.test(String(v || '').trim());
+// מפתחות ישנים מתחילים ב-AIza. מאמצע 2026 Google מנפיקה ב-AI Studio מפתחות חדשים שמתחילים ב-AQ. (Auth key).
+// שני הסוגים עובדים בכתובת הרגילה של Gemini עם הכותרת x-goog-api-key, שבה האפליקציה משתמשת.
+export const normalizeGeminiKey = v => String(v || '').replace(/\s+/g, '');
+export const looksLikeGeminiKey = v => /^(AIza[0-9A-Za-z_-]{30,}|AQ\.[0-9A-Za-z._-]{20,})$/.test(normalizeGeminiKey(v));
 export function geminiAssistOn() { try { return JSON.parse(localStorage.getItem(ON_KEY) || 'true') !== false; } catch { return true; } }
 export function setGeminiAssist(on) { try { localStorage.setItem(ON_KEY, JSON.stringify(!!on)); } catch { /* ignore */ } }
 

@@ -7,7 +7,7 @@ import { startRecording, recordUtterance, recorderSupported, extFor } from './re
 import { transcribe, getGroqKey, setGroqKey, looksLikeGroqKey, testGroqKey, groupSegments, CONVERSATION_MODELS } from './transcribe.js';
 import { prepareImage, readAndTranslate, availableModels, VISION_CANDIDATES } from './vision.js';
 import { numberMismatch } from './numcheck.js';
-import { getGeminiKey, setGeminiKey, looksLikeGeminiKey, geminiAssistOn, setGeminiAssist, geminiReady, geminiReview, testGeminiKey, PRON_LANGS } from './gemini.js';
+import { getGeminiKey, setGeminiKey, looksLikeGeminiKey, normalizeGeminiKey, geminiAssistOn, setGeminiAssist, geminiReady, geminiReview, testGeminiKey, PRON_LANGS } from './gemini.js';
 import { getRates, normalizeCurrency, toILS, formatILS, RATES_CREDIT } from './currency.js';
 const panelBStringsAll = () => PANEL_B_UI;
 
@@ -2169,11 +2169,14 @@ gEl.input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventD
 const mEl = { input: $('optGeminiKey'), save: $('saveGeminiBtn'), status: $('geminiStatus'), assist: $('optGeminiAssist') };
 function setGeminiStatus(cls, msg) { mEl.status.className = `text-xs min-h-[1rem] ${cls}`; mEl.status.textContent = msg; }
 async function saveGemini() {
-  const v = mEl.input.value.trim();
+  const v = normalizeGeminiKey(mEl.input.value); // בלי רווחים ושורות שנכנסו בהעתקה
   if (!v) { setGeminiKey(''); setGeminiStatus('text-slate-400', 'לא מוגדר מפתח. הבדיקה וההגייה יעבדו בלי Gemini.'); return; }
-  if (!looksLikeGeminiKey(v)) { setGeminiStatus('text-amber-300', 'זה לא נראה כמו מפתח Gemini (מתחיל ב-AIza). בדוק שהעתקת את כולו.'); return; }
+  if (/^gsk_/.test(v)) { setGeminiStatus('text-amber-300', 'זה מפתח של Groq. מפתח Gemini יוצרים ב-aistudio.google.com ← Get API key.'); return; }
+  if (v.length < 24) { setGeminiStatus('text-amber-300', 'המפתח קצר מדי. מפתח Gemini מתחיל ב-AQ. (חדש) או ב-AIza (ישן). בדוק שהעתקת את כולו.'); return; }
+  // פורמט לא מוכר לא נחסם: Google משנה פורמטים, והבדיקה מול השירות היא שמכריעה
+  mEl.input.value = v;
   setGeminiKey(v);
-  setGeminiStatus('text-slate-400', 'נשמר. בודק שהמפתח עובד...');
+  setGeminiStatus('text-slate-400', looksLikeGeminiKey(v) ? 'נשמר. בודק שהמפתח עובד...' : 'פורמט לא מוכר, בודק מול Google...');
   try { await testGeminiKey(v); setGeminiStatus('text-emerald-400', '✓ המפתח עובד. הבדיקה וההגייה פעילות.'); }
   catch (e) { setGeminiStatus(e.code === 'auth' ? 'text-rose-300' : 'text-amber-300', e.message); }
 }
