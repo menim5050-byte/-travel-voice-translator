@@ -73,5 +73,16 @@ ok('conversation prefers whisper-large-v3, turbo as backup', CONVERSATION_MODELS
   ok('response without segments still works', r4.text === 'שלום עולם' && r4.segments.length === 1);
 }
 
+{
+  const bodies = [];
+  globalThis.fetch = async (u, init) => { bodies.push({ prompt: init.body.get('prompt') }); return { ok: true, status: 200, text: async () => JSON.stringify({ text: 'x', language: 'hebrew', segments: [] }) }; };
+  await transcribe(blob, { langKey: 'he', prompt: 'מלון הילטון. איפה התחנה' });
+  await transcribe(blob, { langKey: 'he' });
+  await transcribe(blob, { langKey: 'he', prompt: 'א'.repeat(900) });
+  ok('prompt is sent when given', bodies[0].prompt === 'מלון הילטון. איפה התחנה');
+  ok('no prompt field when empty', bodies[1].prompt === null);
+  ok('prompt capped to 400 chars', bodies[2].prompt.length === 400);
+}
+
 console.log(`${pass}/${pass + fail} passed. FAILED: ${fail ? '[' + fail + ']' : '[]'}`);
 process.exit(fail ? 1 : 0);

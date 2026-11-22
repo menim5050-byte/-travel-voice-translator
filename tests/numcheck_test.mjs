@@ -1,0 +1,15 @@
+import { extractNumbers, numberMismatch } from '../js/numcheck.js';
+let pass = 0, fail = 0;
+const ok = (n, c, e = '') => { c ? pass++ : fail++; console.log(`${c ? 'PASS' : 'FAIL'} ${n} ${c ? '' : e}`); };
+ok('same number', numberMismatch('זה עולה 350 באט', 'This costs 350 baht') === null);
+ok('thousands separators equal', numberMismatch('1,500 baht', '1.500 baht') === null && numberMismatch('1,500', '1 500') === null);
+ok('changed price flagged', !!numberMismatch('זה עולה 350', 'It costs 530'));
+ok('missing number flagged', !!numberMismatch('מגיע בשעה 14:30', 'Arrives in the afternoon'));
+ok('no digits in source -> nothing to check', numberMismatch('שלום, מה שלומך', 'Hello 5') === null);
+ok('thai digits normalized', numberMismatch('ราคา ๓๕๐ บาท', 'price 350 baht') === null);
+ok('arabic-indic digits normalized', numberMismatch('السعر ٣٥٠', 'price 350') === null);
+ok('order does not matter', numberMismatch('חדר 12 ו-45 לילות', 'Room 12 and 45 nights') === null && numberMismatch('12 and 45', '45 and 12') === null);
+ok('time as two numbers', numberMismatch('בשעה 14:30', 'at 14:30') === null && !!numberMismatch('בשעה 14:30', 'at 13:30'));
+ok('phone number', numberMismatch('התקשר 052-1234567', 'Call 052-1234567') === null);
+ok('extra number in translation flagged', !!numberMismatch('חדר אחד 2', 'one room 2 and 3'));
+console.log(`${pass}/${pass + fail} passed. FAILED: ${fail ? '[' + fail + ']' : '[]'}`); process.exit(fail ? 1 : 0);

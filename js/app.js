@@ -6,6 +6,7 @@ import { panelBStrings, PANEL_B_UI } from './ui-strings.js';
 import { startRecording, recordUtterance, recorderSupported, extFor } from './recorder.js';
 import { transcribe, getGroqKey, setGroqKey, looksLikeGroqKey, testGroqKey, groupSegments, CONVERSATION_MODELS } from './transcribe.js';
 import { prepareImage, readAndTranslate, availableModels, VISION_CANDIDATES } from './vision.js';
+import { numberMismatch } from './numcheck.js';
 import { getRates, normalizeCurrency, toILS, formatILS, RATES_CREDIT } from './currency.js';
 const panelBStringsAll = () => PANEL_B_UI;
 
@@ -397,6 +398,12 @@ function finishResult(speaker, srcText, rememberLang, out, to, source, historyLa
   rememberResult(speaker, srcText, rememberLang, out, to);
   addHistoryEntry(speaker, historyLang, to, srcText, out, source);
   if (forceSpeak || el.autoSpeakToggle.checked) speakText(out, to, { auto: !forceSpeak });
+  // מחיר, שעה או טלפון שהשתנו בתרגום הם הטעות היקרה ביותר, ולכן מתריעים (המספרים מבודדים כדי שלא יתהפכו ב-RTL)
+  const mm = numberMismatch(srcText, out);
+  if (mm) {
+    const f = a => a.map(n => `\u2066${n}\u2069`).join(' ');
+    showBanner(`⚠ בדוק מספרים: במקור ${f(mm.source)}, בתרגום ${mm.translated.length ? f(mm.translated) : 'אין ספרות'}. אם מדובר במחיר או בשעה, אמת אותם.`, 'warn');
+  }
 }
 
 async function runTranslation(speaker, text, from, to, { forceSpeak = false, rememberLang = from } = {}) {
@@ -617,6 +624,16 @@ lrEl.play.addEventListener('click', () => {
   lastRec.audio.play().catch(() => showBanner('לא ניתן להשמיע את ההקלטה בדפדפן הזה.', 'warn'));
 });
 
+// הקשר ל-Whisper: שם המלון ועד 2 משפטים אחרונים מהשיחה (15 דקות). עוזר לשמות ולמונחים נדירים. הניסוי הזה עוד לא נבדק בשטח.
+function whisperPrompt() {
+  const now = Date.now();
+  const recent = state.history
+    .filter(h => h && (h.speaker === 'A' || h.speaker === 'B') && h.source !== 'listen' && h.source !== 'camera' && now - h.ts < 15 * 60000)
+    .slice(0, 2).reverse().map(h => String(h.originalText || '').slice(0, 120));
+  const hotel = el.hotelInput.value.trim().slice(0, 80);
+  return [hotel, ...recent].filter(Boolean).join('. ');
+}
+
 /** מקליט משפט אחד בשקט ומתמלל. auto=true: זיהוי שפה אוטומטי. מחזיר { text, langKey } או null. */
 async function whisperUtterance({ speaker, auto, onState }) {
   if (!getGroqKey()) {
@@ -648,7 +665,7 @@ async function whisperUtterance({ speaker, auto, onState }) {
   if (onState) onState('transcribing');
   try {
     const asked = auto ? 'auto' : langOf(speaker);
-    const r = await transcribe(res.blob, { langKey: asked, filename: `speech.${extFor(res.blob.type)}`, models: CONVERSATION_MODELS, filterDubious: true });
+    const r = await transcribe(res.blob, { langKey: asked, filename: `speech.${extFor(res.blob.type)}`, models: CONVERSATION_MODELS, filterDubious: true, prompt: whisperPrompt() });
     const text = String(r.text || '').trim();
     setLastRecording({ blob: res.blob, peak, ms: res.ms, asked, model: r.model, detected: r.detectedName, dropped: r.dropped, text });
     if (onState) onState(text ? 'done' : 'empty');

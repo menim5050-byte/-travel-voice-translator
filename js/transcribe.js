@@ -64,7 +64,7 @@ export async function testGroqKey(key) {
  * שולח הקלטה לתמלול. langKey = קוד שפה, או 'auto' לזיהוי אוטומטי.
  * מחזיר { text, langKey (שזוהתה או שנבחרה), segments: [{ start, end, text }] }.
  */
-export async function transcribe(blob, { langKey = 'auto', filename = 'recording.webm', signal, models = WHISPER_MODELS, filterDubious = false } = {}) {
+export async function transcribe(blob, { langKey = 'auto', filename = 'recording.webm', signal, models = WHISPER_MODELS, filterDubious = false, prompt = '' } = {}) {
   const key = getGroqKey();
   if (!key) { const e = new Error('חסר מפתח Groq. הוסף אותו בהגדרות.'); e.code = 'no-key'; throw e; }
   let res, body = '', usedModel = '';
@@ -76,6 +76,7 @@ export async function transcribe(blob, { langKey = 'auto', filename = 'recording
     form.append('response_format', 'verbose_json');
     form.append('temperature', '0');
     if (langKey && langKey !== 'auto') form.append('language', langKey);
+    if (prompt) form.append('prompt', String(prompt).slice(0, 400)); // הקשר: שמות מקומות ומשפטים אחרונים (Groq מגביל ל-224 אסימונים)
     try {
       res = await fetch(`${GROQ_BASE}/audio/transcriptions`, {
         method: 'POST', headers: { Authorization: `Bearer ${key}` }, body: form, signal, referrerPolicy: 'no-referrer'
