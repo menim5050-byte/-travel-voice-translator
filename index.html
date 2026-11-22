@@ -13,7 +13,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="מתורגמן" />
-  <link rel="stylesheet" href="css/styles.css?v=73f5ab2e28" />
+  <link rel="stylesheet" href="css/styles.css?v=cf2288d7d8" />
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
 
@@ -184,6 +184,7 @@
           <p id="outputA" aria-live="polite" class="text-base sm:text-lg font-medium text-emerald-300 leading-relaxed break-words">ממתין לדיבור או טקסט...</p>
           <p id="backA" class="hidden text-xs text-slate-400 leading-relaxed"></p>
           <p id="verifyA" class="hidden text-xs leading-relaxed"></p>
+          <p id="pronA" class="hidden text-xs leading-relaxed text-amber-200/90"></p>
           <div class="f2f-hide flex items-center justify-end gap-4 text-xs text-slate-400">
             <button id="checkBtnA" type="button" class="hit hover:text-white transition" title="מתרגם את התוצאה חזרה כדי לבדוק שהמשמעות נכונה">↩ בדוק משמעות</button>
             <button id="shareBtnA" type="button" class="hidden hit hover:text-white transition">↗ שתף</button>
@@ -261,6 +262,7 @@
           <p id="outputB" aria-live="polite" class="text-base sm:text-lg font-medium text-sky-300 leading-relaxed break-words">ממתין לדיבור או טקסט...</p>
           <p id="backB" class="hidden text-xs text-slate-400 leading-relaxed"></p>
           <p id="verifyB" class="hidden text-xs leading-relaxed"></p>
+          <p id="pronB" class="hidden text-xs leading-relaxed text-amber-200/90"></p>
           <div class="f2f-hide flex items-center justify-end gap-4 text-xs text-slate-400">
             <button id="checkBtnB" type="button" class="hit hover:text-white transition" title="מתרגם את התוצאה חזרה כדי לבדוק שהמשמעות נכונה">↩ בדוק משמעות</button>
             <button id="shareBtnB" type="button" class="hidden hit hover:text-white transition">↗ שתף</button>
@@ -537,6 +539,20 @@
         <p class="text-xs text-slate-400 leading-relaxed">יוצרים מפתח בחינם: console.groq.com ← API Keys ← Create API Key, ומדביקים כאן. המפתח נשמר רק בטלפון הזה, ומי שיש לו את הקישור לא יכול להשתמש בו. כשהתרגום ב-Groq דלוק, הטקסט לתרגום נשלח ל-Groq.</p>
       </div>
 
+      <div class="border-t border-slate-800 pt-3 flex flex-col gap-1.5">
+        <label for="optGeminiKey" class="text-slate-300">מפתח Gemini לבדיקת תרגום והגייה (חינם, רשות)</label>
+        <div class="flex gap-2">
+          <input id="optGeminiKey" type="password" dir="ltr" autocomplete="off" spellcheck="false" placeholder="AIza..." class="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          <button id="saveGeminiBtn" type="button" class="shrink-0 min-w-[5.5rem] px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white transition font-semibold">שמור ובדוק</button>
+        </div>
+        <p id="geminiStatus" class="text-xs min-h-[1rem]" aria-live="polite"></p>
+        <label class="flex items-start gap-2 text-slate-300 cursor-pointer select-none">
+          <input id="optGeminiAssist" type="checkbox" class="mt-1 h-4 w-4 accent-indigo-500" checked />
+          <span>בדיקה אוטומטית עם Gemini <span class="text-slate-400 text-xs">(אחרי כל תרגום לשפה שאינה עברית או אנגלית: בדיקת משמעות עצמאית, תרגום חלופי כשיש חשד, והגייה בעברית ובאותיות לטיניות ליפנית, סינית, תאית, קוריאנית, ערבית, רוסית, הינדית ויוונית)</span></span>
+        </label>
+        <p class="text-xs text-slate-400 leading-relaxed">מפתח בחינם: aistudio.google.com ← Get API key. נשמר רק בטלפון הזה. הטקסט המתורגם נשלח ל-Google; לפי התנאים של Google, בשכבה החינמית התוכן עשוי לשמש לשיפור השירותים שלה. אל תתרגם מידע אישי רגיש כשהאפשרות דלוקה. ההגייה משוערת בלבד.</p>
+      </div>
+
       <div class="border-t border-slate-800 pt-3 flex items-center justify-between gap-3">
         <div class="flex flex-col gap-1">
           <p id="cacheInfo" class="text-xs text-slate-400"></p>
@@ -580,19 +596,20 @@
   <!-- כתובת עם גרסה לכל קובץ, כדי שהדפדפן לעולם לא יערבב קובץ ישן עם חדש. נכתב אוטומטית ע"י tools/stamp-sw.py -->
   <script type="importmap">
   { "imports": {
-    "./js/app.js": "./js/app.js?v=73f5ab2e28",
-    "./js/languages.js": "./js/languages.js?v=73f5ab2e28",
-    "./js/phrasebook.js": "./js/phrasebook.js?v=73f5ab2e28",
-    "./js/translate.js": "./js/translate.js?v=73f5ab2e28",
-    "./js/speech.js": "./js/speech.js?v=73f5ab2e28",
-    "./js/recorder.js": "./js/recorder.js?v=73f5ab2e28",
-    "./js/transcribe.js": "./js/transcribe.js?v=73f5ab2e28",
-    "./js/vision.js": "./js/vision.js?v=73f5ab2e28",
-    "./js/currency.js": "./js/currency.js?v=73f5ab2e28",
-    "./js/numcheck.js": "./js/numcheck.js?v=73f5ab2e28",
-    "./js/ui-strings.js": "./js/ui-strings.js?v=73f5ab2e28"
+    "./js/app.js": "./js/app.js?v=cf2288d7d8",
+    "./js/languages.js": "./js/languages.js?v=cf2288d7d8",
+    "./js/phrasebook.js": "./js/phrasebook.js?v=cf2288d7d8",
+    "./js/translate.js": "./js/translate.js?v=cf2288d7d8",
+    "./js/speech.js": "./js/speech.js?v=cf2288d7d8",
+    "./js/recorder.js": "./js/recorder.js?v=cf2288d7d8",
+    "./js/transcribe.js": "./js/transcribe.js?v=cf2288d7d8",
+    "./js/vision.js": "./js/vision.js?v=cf2288d7d8",
+    "./js/currency.js": "./js/currency.js?v=cf2288d7d8",
+    "./js/numcheck.js": "./js/numcheck.js?v=cf2288d7d8",
+    "./js/gemini.js": "./js/gemini.js?v=cf2288d7d8",
+    "./js/ui-strings.js": "./js/ui-strings.js?v=cf2288d7d8"
   } }
   </script>
-  <script type="module" src="js/app.js?v=73f5ab2e28"></script>
+  <script type="module" src="js/app.js?v=cf2288d7d8"></script>
 </body>
 </html>

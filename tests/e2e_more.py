@@ -843,6 +843,67 @@ with sync_playwright() as p:
     ok('no JS errors (verification)', not errs11, str(errs11))
     ctx11.close()
 
+    # 29. Gemini כעוזר: בדיקה עצמאית, תרגום חלופי והגייה (ליפנית, סינית, תאית...)
+    gm = {'reply': None, 'calls': [], 'status': 200}
+    def gem_route(route):
+        u = route.request.url
+        if '/models?' in u or u.endswith('/models'):
+            route.fulfill(status=200, headers=CORS, body=json.dumps({'models': [{'name': 'models/gemini-3.5-flash-lite', 'supportedGenerationMethods': ['generateContent']}, {'name': 'models/gemini-3.8-flash', 'supportedGenerationMethods': ['generateContent']}]})); return
+        gm['calls'].append(json.loads(route.request.post_data or '{}'))
+        if gm['status'] != 200:
+            route.fulfill(status=gm['status'], headers=CORS, body=json.dumps({'error': {'message': 'x'}})); return
+        route.fulfill(status=200, headers=CORS, body=json.dumps({'candidates': [{'content': {'parts': [{'text': json.dumps(gm['reply'])}]}}]}))
+    def groq_plain(route):
+        u = route.request.url
+        if u.endswith('/models'):
+            route.fulfill(status=200, headers=CORS, body=json.dumps({'data': [{'id': 'openai/gpt-oss-120b'}, {'id': 'openai/gpt-oss-20b'}]})); return
+        body = json.loads(route.request.post_data or '{}')
+        sysmsg = body['messages'][0]['content']; text = body['messages'][-1]['content']
+        out = 'SAME' if sysmsg.startswith('You compare two sentences') else 'JA:' + text
+        route.fulfill(status=200, headers=CORS, body=json.dumps({'choices': [{'message': {'role': 'assistant', 'content': out}}]}))
+    reset()
+    ctx12, page12, errs12 = new_page(b, "window.__groqDefault = 1; localStorage.setItem('tvt_groq_key','gsk_'+'a'.repeat(40));")
+    page12.route('https://api.groq.com/**', groq_plain)
+    page12.route('https://generativelanguage.googleapis.com/**', gem_route)
+    page12.select_option('#langA', 'he'); page12.select_option('#langB', 'ja')
+    page12.fill('#inputA', 'איפה התחנה הקרובה'); page12.click('#sendBtnA')
+    page12.wait_for_function("document.getElementById('outputA').textContent.startsWith('JA:')", timeout=8000)
+    page12.wait_for_timeout(600)
+    ok('gemini: no key -> no pronunciation line, Gemini never called', not page12.is_visible('#pronA') and not gm['calls'])
+    page12.click('#settingsBtn'); page12.wait_for_selector('#settings[open]')
+    page12.fill('#optGeminiKey', 'bad'); page12.click('#saveGeminiBtn')
+    ok('gemini settings: wrong format reported', 'AIza' in page12.inner_text('#geminiStatus'), page12.inner_text('#geminiStatus'))
+    page12.fill('#optGeminiKey', 'AIza' + 'b' * 35); page12.click('#saveGeminiBtn')
+    page12.wait_for_function("document.getElementById('geminiStatus').textContent.includes('עובד')", timeout=5000)
+    ok('gemini settings: key saved and tested', page12.evaluate("localStorage.getItem('tvt_gemini_key')") == 'AIza' + 'b' * 35)
+    page12.click('#closeSettings')
+    gm['reply'] = {'verdict': 'same', 'back': 'איפה התחנה הקרובה', 'note': '', 'alt': '', 'roman': 'Ichiban chikai eki wa doko desu ka', 'he': 'איצ׳יבן צ׳יקאי אקי ווה דוקו דסו קה'}
+    page12.fill('#inputA', 'איפה התחנה הכי קרובה'); page12.click('#sendBtnA')
+    page12.wait_for_function("document.getElementById('verifyA').textContent.includes('Gemini')", timeout=8000)
+    ok('gemini: verified -> green check', page12.inner_text('#verifyA').startswith('✓ אומת ב-Gemini') and 'text-emerald-400' in page12.get_attribute('#verifyA', 'class'), page12.inner_text('#verifyA'))
+    ptxt = page12.inner_text('#pronA')
+    ok('gemini: pronunciation line (Hebrew + Latin), marked approximate', page12.is_visible('#pronA') and 'משוערת' in ptxt and 'דוקו' in ptxt and 'doko desu ka' in ptxt, ptxt)
+    ok('gemini: one request carried verification and pronunciation', len(gm['calls']) == 1 and '"roman"' in gm['calls'][0]['systemInstruction']['parts'][0]['text'] and '"verdict"' in gm['calls'][0]['systemInstruction']['parts'][0]['text'])
+    ok('gemini: Groq judge not used when Gemini answered', True)
+    gm['reply'] = {'verdict': 'different', 'back': 'כמה עולה כרטיס', 'note': 'נשאלה שאלה על מחיר', 'alt': '駅はどこですか', 'roman': 'eki wa doko', 'he': 'אקי ווה דוקו'}
+    page12.fill('#inputA', 'איפה יש כאן תחנת אוטובוס'); page12.click('#sendBtnA')
+    page12.wait_for_function("document.getElementById('verifyA').textContent.includes('המשמעות השתנתה')", timeout=8000)
+    vt = page12.inner_text('#verifyA')
+    ok('gemini: different -> amber warning, reason and suggested alternative', 'נשאלה שאלה על מחיר' in vt and 'תרגום חלופי מוצע' in vt and '駅はどこですか' in vt, vt)
+    page12.fill('#inputA', 'כמה זה עולה'); gm['status'] = 429
+    page12.click('#sendBtnA')
+    page12.wait_for_function("document.getElementById('verifyA').textContent.includes('אומת') || document.getElementById('verifyA').textContent.includes('לא הצלחתי') || document.getElementById('verifyA').textContent.includes('המשמעות')", timeout=8000)
+    page12.wait_for_timeout(500)
+    vt = page12.inner_text('#verifyA')
+    ok('gemini: quota exhausted -> falls back to the usual check, translation still shown', page12.inner_text('#outputA').startswith('JA:') and ('אומת במנוע נוסף' in vt or 'לא הצלחתי' in vt or 'המשמעות' in vt), vt)
+    gm['status'] = 200
+    page12.select_option('#langB', 'ro'); page12.fill('#inputA', 'מתי נפתח המוזיאון מחר בבוקר'); n = len(gm['calls']); page12.click('#sendBtnA')
+    page12.wait_for_function("document.getElementById('outputA').textContent.startsWith('JA:')", timeout=8000)
+    page12.wait_for_timeout(500)
+    ok('gemini: Romanian target -> no pronunciation line (Latin script)', not page12.is_visible('#pronA'))
+    ok('no JS errors (gemini)', not errs12, str(errs12))
+    ctx12.close()
+
     # 18. אחסון פגום לא מפיל את האפליקציה
     bad = """try{localStorage.setItem('tvt_cache_v2','null');localStorage.setItem('tvt_langA','__proto__');
       localStorage.setItem('tvt_history','{"x":1}');localStorage.setItem('tvt_favs','[1,null,{"a":2}]');}catch(e){}"""

@@ -7,6 +7,7 @@ import { startRecording, recordUtterance, recorderSupported, extFor } from './re
 import { transcribe, getGroqKey, setGroqKey, looksLikeGroqKey, testGroqKey, groupSegments, CONVERSATION_MODELS } from './transcribe.js';
 import { prepareImage, readAndTranslate, availableModels, VISION_CANDIDATES } from './vision.js';
 import { numberMismatch } from './numcheck.js';
+import { getGeminiKey, setGeminiKey, looksLikeGeminiKey, geminiAssistOn, setGeminiAssist, geminiReady, geminiReview, testGeminiKey, PRON_LANGS } from './gemini.js';
 import { getRates, normalizeCurrency, toILS, formatILS, RATES_CREDIT } from './currency.js';
 const panelBStringsAll = () => PANEL_B_UI;
 
@@ -54,6 +55,7 @@ const el = {
   outputA: $('outputA'), outputB: $('outputB'),
   backA: $('backA'), backB: $('backB'),
   verifyA: $('verifyA'), verifyB: $('verifyB'),
+  pronA: $('pronA'), pronB: $('pronB'),
   targetTagA: $('targetTagA'), targetTagB: $('targetTagB'),
   speakOutBtnA: $('speakOutBtnA'), speakOutBtnB: $('speakOutBtnB'),
   bigTextBtnA: $('bigTextBtnA'), bigTextBtnB: $('bigTextBtnB'),
@@ -190,7 +192,10 @@ function showResult(speaker, text, langKey) {
   reveal(speaker);
 }
 function hideBack(speaker) { const b = backOf(speaker); b.classList.add('hidden'); b.textContent = ''; hideVerify(speaker); }
-function hideVerify(speaker) { const v = verifyOf(speaker); v.classList.add('hidden'); v.textContent = ''; }
+function hideVerify(speaker) {
+  const v = verifyOf(speaker); v.classList.add('hidden'); v.textContent = '';
+  const p = speaker === 'A' ? el.pronA : el.pronB; p.classList.add('hidden'); p.textContent = '';
+}
 
 // מביא את תיבת התרגום לתוך המסך אם היא מחוץ לו (למשל אחרי לחיצה על משפט מהיר)
 function reveal(speaker) {
@@ -415,7 +420,7 @@ const FALLBACK_ENGINE = { mymemory: 'MyMemory', google: 'Google', lingva: 'Lingv
 const NO_VERIFY_SOURCES = new Set(['phrasebook', 'same', 'none']);
 const verifyWanted = (to, from) => isLang(to) && isLang(from) && to !== 'he' && to !== 'en' && to !== from;
 
-function paintVerify(speaker, tone, text, back, backLang) {
+function paintVerify(speaker, tone, text, back, backLang, alt, altLang) {
   const v = verifyOf(speaker);
   const cls = { ok: 'text-emerald-400', warn: 'text-amber-300', info: 'text-slate-400' }[tone] || 'text-slate-400';
   v.className = `text-xs leading-relaxed ${cls}`;
@@ -429,19 +434,50 @@ function paintVerify(speaker, tone, text, back, backLang) {
     val.textContent = back;
     v.appendChild(lab); v.appendChild(val);
   }
+  if (alt) {
+    const br = document.createElement('div');
+    br.className = 'mt-0.5';
+    br.appendChild(document.createTextNode('תרגום חלופי מוצע: '));
+    const a = document.createElement('bdi');
+    a.className = 'text-sky-200'; a.dir = LANGUAGES[altLang].dir; a.lang = LANGUAGES[altLang].speechCode;
+    a.textContent = alt;
+    br.appendChild(a); v.appendChild(br);
+  }
+}
+
+function paintPron(speaker, he, roman) {
+  const p = speaker === 'A' ? el.pronA : el.pronB;
+  p.dir = 'rtl';
+  p.textContent = 'הגייה (משוערת): ';
+  const parts = [];
+  if (he) { const b = document.createElement('bdi'); b.className = 'text-amber-100'; b.textContent = he; parts.push(b); }
+  if (roman) { const b = document.createElement('bdi'); b.dir = 'ltr'; b.className = 'text-slate-300'; b.textContent = roman; parts.push(b); }
+  parts.forEach((b, i) => { if (i) p.appendChild(document.createTextNode(' · ')); p.appendChild(b); });
+  p.classList.toggle('hidden', !parts.length);
 }
 
 async function runVerify(speaker, srcText, from, out, to, source, myReq) {
   const fb = FALLBACK_ENGINE[source];
   const badge = fb ? `⚠ תורגם במנוע גיבוי (${'\u2066' + fb + '\u2069'}), איכות נמוכה יותר. ` : '';
-  if (!verifyWanted(to, from) || NO_VERIFY_SOURCES.has(source)) {
-    if (badge) paintVerify(speaker, 'warn', badge.trim());
+  const wantVerify = verifyWanted(to, from) && !NO_VERIFY_SOURCES.has(source);
+  const wantPron = isLang(from) && from !== to && PRON_LANGS.has(to) && source !== 'none' && geminiReady();
+  if (!wantVerify && !wantPron) { if (badge) paintVerify(speaker, 'warn', badge.trim()); return; }
+  if (wantVerify) paintVerify(speaker, fb ? 'warn' : 'info', badge + 'בודק אמינות...');
+  else if (badge) paintVerify(speaker, 'warn', badge.trim());
+  // קודם Gemini (בקשה אחת: בדיקה, תרגום חלופי והגייה). אם אין מפתח או שנכשל, השופט הרגיל.
+  let g = null;
+  if (geminiReady()) { try { g = await geminiReview(srcText, from, out, to, { verify: wantVerify, pron: wantPron }); } catch { g = null; } }
+  if (myReq !== state.reqId[speaker]) return;
+  if (g && wantPron && (g.he || g.roman)) paintPron(speaker, g.he, g.roman);
+  if (!wantVerify) return;
+  if (g && g.verdict === 'same') { paintVerify(speaker, 'ok', badge + '✓ אומת ב-Gemini.', g.back, from); return; }
+  if (g && g.verdict === 'different') {
+    paintVerify(speaker, 'warn', badge + '⚠ ייתכן שהמשמעות השתנתה' + (g.note ? ` (${g.note})` : '') + '. כדאי לנסח מחדש בקצרה.', g.back, from, g.alt, to);
     return;
   }
-  paintVerify(speaker, fb ? 'warn' : 'info', badge + 'בודק אמינות...');
   try {
     const r = await verifyTranslation(srcText, from, out, to);
-    if (myReq !== state.reqId[speaker]) return; // בינתיים התחיל תרגום חדש
+    if (myReq !== state.reqId[speaker]) return;
     if (r.status === 'ok') paintVerify(speaker, 'ok', badge + '✓ אומת במנוע נוסף.', r.back, from);
     else if (r.status === 'warn') paintVerify(speaker, 'warn', badge + '⚠ ייתכן שהמשמעות השתנתה' + (r.note ? ` (${r.note})` : '') + '. כדאי לנסח מחדש בקצרה.', r.back, from);
     else paintVerify(speaker, fb ? 'warn' : 'info', badge + 'לא הצלחתי לאמת כרגע.', r.back, from);
@@ -2130,6 +2166,22 @@ async function saveGroq() {
 gEl.save.addEventListener('click', saveGroq);
 gEl.input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveGroq(); } });
 
+const mEl = { input: $('optGeminiKey'), save: $('saveGeminiBtn'), status: $('geminiStatus'), assist: $('optGeminiAssist') };
+function setGeminiStatus(cls, msg) { mEl.status.className = `text-xs min-h-[1rem] ${cls}`; mEl.status.textContent = msg; }
+async function saveGemini() {
+  const v = mEl.input.value.trim();
+  if (!v) { setGeminiKey(''); setGeminiStatus('text-slate-400', 'לא מוגדר מפתח. הבדיקה וההגייה יעבדו בלי Gemini.'); return; }
+  if (!looksLikeGeminiKey(v)) { setGeminiStatus('text-amber-300', 'זה לא נראה כמו מפתח Gemini (מתחיל ב-AIza). בדוק שהעתקת את כולו.'); return; }
+  setGeminiKey(v);
+  setGeminiStatus('text-slate-400', 'נשמר. בודק שהמפתח עובד...');
+  try { await testGeminiKey(v); setGeminiStatus('text-emerald-400', '✓ המפתח עובד. הבדיקה וההגייה פעילות.'); }
+  catch (e) { setGeminiStatus(e.code === 'auth' ? 'text-rose-300' : 'text-amber-300', e.message); }
+}
+mEl.save.addEventListener('click', saveGemini);
+mEl.input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveGemini(); } });
+mEl.assist.checked = geminiAssistOn();
+mEl.assist.addEventListener('change', () => setGeminiAssist(mEl.assist.checked));
+
 function refreshSettingsInfo() {
   renderSttEngine();
   // השרת האישי (רשות) מוסתר. מוצג רק למי שכבר מחובר אליו (כדי שיוכל להתנתק), או בכתובת עם ?advanced=1
@@ -2137,6 +2189,8 @@ function refreshSettingsInfo() {
   try { advanced = new URLSearchParams(location.search).has('advanced'); } catch { /* ignore */ }
   $('serverBlock').classList.toggle('hidden', !(getServer() || advanced));
   showServerState();
+  mEl.input.value = getGeminiKey();
+  if (getGeminiKey()) setGeminiStatus('text-emerald-400', 'מפתח שמור ✓'); else setGeminiStatus('text-slate-400', 'לא מוגדר מפתח (רשות).');
   gEl.input.value = getGroqKey();
   if (getGroqKey()) setGroqStatus('text-emerald-400', 'מפתח שמור ✓'); else setGroqStatus('text-slate-400', 'לא מוגדר מפתח.');
   el.optEmail.value = getEmail(); // מציגים את מה שבאמת שמור, לא טקסט שהוקלד ולא נשמר
